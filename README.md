@@ -416,18 +416,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 **Hamsini Putchala**
 
 - GitHub: [@HamsiniPutchala](https://github.com/HamsiniPutchala)
-- Email: your.email@example.com
-- Portfolio: [Your Portfolio](https://yourportfolio.com)
 
-### Acknowledgments
-
-- Inspired by the Kaggle Fruits-360 dataset
-- Built with TensorFlow/Keras community
-- Thanks to Streamlit for the amazing web framework
-- Dataset maintainers for providing quality training data
-
----
-
-**If you found this project helpful, please consider giving it a ⭐ on GitHub!**
-
-*Last Updated: 2024*
