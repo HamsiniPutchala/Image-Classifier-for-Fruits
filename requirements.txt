@@ -1,5 +1,5 @@
-# Streamlit Cloud currently uses Python 3.14; TensorFlow 2.22.0rc0 provides cp314 wheels.
-tensorflow==2.22.0rc0
+# Streamlit Cloud deployment (Python 3.14 compatible)
+tensorflow-cpu==2.22.0rc0
 numpy>=1.26.0,<2.2
 pandas>=2.1.0,<3.0
 matplotlib>=3.8.0,<4.0
@@ -8,4 +8,3 @@ opencv-python-headless>=4.10.0,<5.0
 streamlit>=1.39.0,<2.0
 Pillow>=10.4.0,<12.0
 python-dotenv>=1.0.1,<2.0
-kagglehub>=0.3.12
