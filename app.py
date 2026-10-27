@@ -12,9 +12,9 @@ import numpy as np
 import pandas as pd
 import streamlit as st
 import tensorflow as tf
-from PIL import Image, ImageStat
+from PIL import Image
 
-from utils import IMAGE_SIZE, get_class_names, load_and_preprocess_image
+from utils import IMAGE_SIZE, get_class_names
 
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_CANDIDATES = [BASE_DIR / "models" / "best_model.keras", BASE_DIR / "models" / "fruit_classifier.keras"]
@@ -39,13 +39,19 @@ def find_bundled_model() -> Path | None:
 @st.cache_data
 def load_classes() -> list[str]:
     try:
-        if DATASET_PATH.exists():
+        train_path = DATASET_PATH / "train"
+        if train_path.exists():
             classes = get_class_names(str(DATASET_PATH))
             if classes:
                 return list(classes)
     except Exception:
         pass
     return DEFAULT_CLASSES.copy()
+
+
+def preprocess_pil(image: Image.Image) -> np.ndarray:
+    image = image.convert("RGB").resize(IMAGE_SIZE, Image.Resampling.LANCZOS)
+    return np.asarray(image, dtype=np.float32) / 255.0
 
 
 def confidence_label(confidence: float) -> str:
@@ -61,8 +67,7 @@ def image_quality(image: Image.Image) -> dict[str, Any]:
     gray = np.asarray(rgb.convert("L"), dtype=np.float32)
     brightness = float(gray.mean())
     contrast = float(gray.std())
-    sharpness = float(np.var(np.asarray(rgb, dtype=np.float32)[:, 1:, :] - np.asarray(rgb, dtype=np.float32)[:, :-1, :]))
-    quality = "Good"
+    sharpness = float(np.var(gray[:, 1:] - gray[:, :-1]))
     warnings: list[str] = []
     if brightness < 45:
         warnings.append("Image may be too dark")
@@ -72,14 +77,11 @@ def image_quality(image: Image.Image) -> dict[str, Any]:
         warnings.append("Low contrast")
     if sharpness < 80:
         warnings.append("Image may be blurry")
-    if warnings:
-        quality = "Needs improvement"
-    return {"quality": quality, "brightness": brightness, "contrast": contrast, "sharpness": sharpness, "warnings": warnings}
+    return {"quality": "Good" if not warnings else "Needs improvement", "brightness": brightness, "contrast": contrast, "sharpness": sharpness, "warnings": warnings}
 
 
 def predict_image(model: tf.keras.Model, image_array: np.ndarray, class_names: list[str]) -> dict[str, Any]:
     raw = np.asarray(model.predict(np.expand_dims(image_array, axis=0), verbose=0)[0], dtype=float)
-    # Support models that return logits rather than normalized probabilities.
     if np.any(raw < 0) or not np.isclose(raw.sum(), 1.0, atol=0.05):
         exp = np.exp(raw - np.max(raw))
         probabilities = exp / exp.sum()
@@ -127,8 +129,7 @@ def show_prediction(results: dict[str, Any], quality: dict[str, Any]) -> None:
 def classify_bytes(model: tf.keras.Model, data: bytes, classes: list[str]) -> tuple[Image.Image, dict[str, Any], dict[str, Any]]:
     image = Image.open(io.BytesIO(data)).convert("RGB")
     quality = image_quality(image)
-    array = load_and_preprocess_image(io.BytesIO(data), IMAGE_SIZE)
-    results = predict_image(model, array, classes)
+    results = predict_image(model, preprocess_pil(image), classes)
     return image, results, quality
 
 
@@ -164,7 +165,7 @@ def upload_page(model: tf.keras.Model, classes: list[str]) -> None:
 
 
 def camera_page(model: tf.keras.Model, classes: list[str]) -> None:
-    st.header("📷 Live Camera Classification")
+    st.header("📷 Camera Classification")
     camera_image = st.camera_input("Capture a fruit")
     if camera_image is None:
         st.info("Allow camera access and capture an image.")
@@ -193,9 +194,8 @@ def dashboard_page() -> None:
     c3.metric("Average confidence", f"{df['Confidence (%)'].mean():.1f}%")
     c4.metric("High confidence", f"{(df['Confidence (%)'] >= 85).mean() * 100:.1f}%")
     st.divider()
-    counts = df["Predicted Class"].value_counts().rename("Predictions")
     st.subheader("Prediction distribution")
-    st.bar_chart(counts)
+    st.bar_chart(df["Predicted Class"].value_counts().rename("Predictions"))
     st.dataframe(df, use_container_width=True, hide_index=True)
     st.download_button("⬇️ Export complete history", df.to_csv(index=False).encode("utf-8"), "fruit_prediction_history.csv", "text/csv")
     if st.button("🗑️ Clear history"):
@@ -212,7 +212,7 @@ def model_page() -> tf.keras.Model | None:
             st.error(f"Bundled model could not be loaded: {exc}")
     st.warning("No trained CNN model is bundled with this repository yet.")
     st.markdown("### Model setup")
-    st.write("Upload your trained `.keras` model below. This is a temporary session upload; for permanent deployment, place the trained model in `models/best_model.keras` in the repository.")
+    st.write("Upload your trained `.keras` model below. For permanent deployment, add the trained model as `models/best_model.keras` to the repository.")
     model_file = st.file_uploader("Upload trained Keras model", type=["keras"], key="model_uploader")
     if model_file:
         try:
