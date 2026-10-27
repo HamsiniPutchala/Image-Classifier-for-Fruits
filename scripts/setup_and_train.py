@@ -1,11 +1,13 @@
-"""Simple, transparent setup helper for FruitVision AI.
+"""Transparent local setup helper for FruitVision AI.
 
-Run this file yourself from the project folder with:
+Run from the repository root with:
     python scripts/setup_and_train.py
 
-It creates a virtual environment, installs the pinned dependencies, prepares
-three fruit classes, and trains the CNN. No shell commands are downloaded or
-executed from the internet by this script.
+The script creates a local virtual environment, installs the project's pinned
+Python dependencies, prepares the real Fruits-360 subset, and trains the CNN.
+It does not download or execute arbitrary shell scripts.
+
+Recommended Python version: 3.11.x (TensorFlow 2.15 compatibility).
 """
 from __future__ import annotations
 
@@ -15,7 +17,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VENV = ROOT / ".venv"
-PYTHON = VENV / ("Scripts" if sys.platform == "win32" else "bin") / ("python.exe" if sys.platform == "win32" else "python")
+PYTHON = VENV / ("Scripts" if sys.platform == "win32" else "bin") / (
+    "python.exe" if sys.platform == "win32" else "python"
+)
 
 
 def run(*args: str) -> None:
@@ -23,20 +27,39 @@ def run(*args: str) -> None:
     subprocess.run(args, cwd=ROOT, check=True)
 
 
+def check_python_version() -> None:
+    if sys.version_info[:2] != (3, 11):
+        print(
+            "Unsupported Python version: "
+            f"{sys.version_info.major}.{sys.version_info.minor}"
+        )
+        print("Please install Python 3.11.x and run this setup again.")
+        raise SystemExit(1)
+
+
 def main() -> None:
     print("FruitVision AI - setup and training")
-    print("This script only runs commands that are explicitly listed below.")
+    print("This script only runs commands explicitly defined by this project.")
+    print("Recommended runtime: Python 3.11.x")
+
+    check_python_version()
 
     if not VENV.exists():
         run(sys.executable, "-m", "venv", str(VENV))
 
+    if not PYTHON.exists():
+        raise RuntimeError(f"Virtual-environment Python was not created: {PYTHON}")
+
+    run(str(PYTHON), "-m", "pip", "install", "--upgrade", "pip")
     run(str(PYTHON), "-m", "pip", "install", "-r", "requirements.txt")
     run(str(PYTHON), "scripts/prepare_dataset.py")
     run(str(PYTHON), "train.py")
 
-    print("\nTraining completed.")
-    print("Expected model: models/best_model.keras")
-    print("To start Streamlit:")
+    print("\nTraining completed successfully.")
+    print("Expected models:")
+    print("  models/best_model.keras")
+    print("  models/fruit_classifier.keras")
+    print("\nTo start Streamlit:")
     print(f'  "{PYTHON}" -m streamlit run app.py')
 
 
