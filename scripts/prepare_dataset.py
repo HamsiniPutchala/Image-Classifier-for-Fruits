@@ -1,18 +1,12 @@
 """Prepare a clean 3-class fruit dataset from the real Fruits-360 dataset.
 
-The public Fruits-360 dataset stores varieties such as "Apple Crimson Snow",
-"Apple Granny Smith", "Banana Red", etc. as separate folders. This script
-correctly combines those varieties into the three project classes:
-Apple, Banana and Orange.
+The Kaggle Fruits-360 release has changed its internal folder layout across
+versions. This script therefore discovers fruit folders recursively and matches
+class names flexibly, instead of relying on one exact directory structure.
 
-It uses the source Training split for project training images and the source
-Test split for project validation images, so the same source image is never
-copied into both sets. Only a compact subset is copied into this repository's
-local ``dataset/`` directory; the full KaggleHub cache remains outside the
-repository.
-
-Run from the repository root:
-    python scripts/prepare_dataset.py
+It combines all matching Apple/Banana/Orange varieties into three project
+classes. Source Training images are used for project training and source Test
+images for validation, preventing train/validation leakage.
 """
 from __future__ import annotations
 
@@ -34,59 +28,63 @@ IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
 
 def normalize_name(name: str) -> str:
-    """Normalize a dataset folder name for reliable matching."""
-    return " ".join(name.lower().replace("_", " ").replace("-", " ").split())
+    return "".join(ch.lower() for ch in name if ch.isalnum())
 
 
 def class_matches(folder_name: str, class_name: str) -> bool:
-    """Return True for a fruit class and all of its named varieties."""
+    """Match Apple/Banana/Orange and common variety naming variants."""
     name = normalize_name(folder_name)
-    target = class_name.lower()
-    return name == target or name.startswith(target + " ")
+    target = normalize_name(class_name)
+    return name == target or name.startswith(target)
 
 
 def find_split_root(root: Path, split_names: set[str]) -> Path:
-    """Find the Training/Test directory in the KaggleHub download."""
     candidates = [
         p for p in root.rglob("*")
-        if p.is_dir() and normalize_name(p.name) in split_names
+        if p.is_dir() and normalize_name(p.name) in {normalize_name(x) for x in split_names}
     ]
     if not candidates:
-        raise FileNotFoundError(
-            f"Could not find a Training/Test folder in downloaded dataset at {root}"
-        )
-    candidates.sort(key=lambda p: len(p.parts))
+        raise FileNotFoundError(f"Could not find a split folder under {root}")
+    # Prefer a split containing the largest number of image files.
+    candidates.sort(
+        key=lambda p: sum(1 for f in p.rglob("*") if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS),
+        reverse=True,
+    )
     return candidates[0]
 
 
 def find_class_folders(split_root: Path, class_name: str) -> list[Path]:
-    """Find every source variety folder belonging to one project class."""
-    matches = [
-        p for p in split_root.rglob("*")
-        if p.is_dir() and class_matches(p.name, class_name)
-    ]
-    # Keep only the nearest matching folders so nested directories cannot be
-    # counted twice.
-    matches = [
-        p for p in matches
-        if not any(parent in matches for parent in p.parents)
-    ]
-    return sorted(matches, key=lambda p: p.name.lower())
+    """Find source folders for a class, including folders named like Banana 1."""
+    matches: list[Path] = []
+    target = normalize_name(class_name)
+    for folder in split_root.rglob("*"):
+        if not folder.is_dir():
+            continue
+        name = normalize_name(folder.name)
+        if name == target or name.startswith(target):
+            images = [
+                f for f in folder.iterdir()
+                if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+            ]
+            if images:
+                matches.append(folder)
+
+    # If the dataset has a parent class folder containing variety subfolders,
+    # keep the leaf folders with images. This avoids double-counting.
+    return sorted(set(matches), key=lambda p: str(p).lower())
 
 
 def image_files(folders: list[Path]) -> list[Path]:
-    """Collect image files from all matching variety folders."""
     images: list[Path] = []
     for folder in folders:
         images.extend(
             p for p in folder.rglob("*")
             if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
         )
-    return sorted(images, key=lambda p: str(p).lower())
+    return sorted(set(images), key=lambda p: str(p).lower())
 
 
 def copy_images(images: list[Path], destination: Path) -> None:
-    """Copy images with deterministic unique filenames."""
     destination.mkdir(parents=True, exist_ok=True)
     for index, image in enumerate(images, start=1):
         destination_name = f"{index:04d}_{image.stem}{image.suffix.lower()}"
@@ -113,15 +111,18 @@ def main() -> None:
         train_images = image_files(train_folders)
         test_images = image_files(test_folders)
 
+        print(f"{class_name}: discovered {len(train_images)} training and {len(test_images)} test images")
+        print("  Training folders: " + ", ".join(p.name for p in train_folders[:20]))
+
         if len(train_images) < TRAIN_PER_CLASS:
             raise RuntimeError(
-                f"{class_name}: only {len(train_images)} source training images "
-                f"found; need {TRAIN_PER_CLASS}."
+                f"{class_name}: only {len(train_images)} source training images found; "
+                f"need {TRAIN_PER_CLASS}. Dataset layout may have changed."
             )
         if len(test_images) < VAL_PER_CLASS:
             raise RuntimeError(
-                f"{class_name}: only {len(test_images)} source test images "
-                f"found; need {VAL_PER_CLASS}."
+                f"{class_name}: only {len(test_images)} source test images found; "
+                f"need {VAL_PER_CLASS}. Dataset layout may have changed."
             )
 
         rng.shuffle(train_images)
@@ -132,21 +133,15 @@ def main() -> None:
         copy_images(selected_train, TRAIN_ROOT / class_name)
         copy_images(selected_val, VAL_ROOT / class_name)
 
-        variety_names = [p.name for p in train_folders]
         print(
             f"{class_name}: train={len(selected_train)}, "
-            f"validation={len(selected_val)}, "
-            f"varieties={len(variety_names)}"
+            f"validation={len(selected_val)}, varieties={len(train_folders)}"
         )
-        print("  Included varieties: " + ", ".join(variety_names))
 
     print("\nDataset preparation complete.")
     print(f"Created: {DATASET_ROOT}")
     print("Classes: " + ", ".join(CLASSES))
-    print(
-        f"Images: {TRAIN_PER_CLASS * len(CLASSES)} training + "
-        f"{VAL_PER_CLASS * len(CLASSES)} validation"
-    )
+    print(f"Images: {TRAIN_PER_CLASS * len(CLASSES)} training + {VAL_PER_CLASS * len(CLASSES)} validation")
     print("Next step: python train.py")
 
 
