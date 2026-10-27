@@ -3,6 +3,9 @@ name: Train Fruit Classifier
 on:
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   train:
     runs-on: ubuntu-22.04
@@ -55,16 +58,20 @@ jobs:
           test -s models/class_names.json
           python - <<'PY'
           import json
+          from pathlib import Path
           with open('models/class_names.json', encoding='utf-8') as f:
               classes = json.load(f)
           assert classes == ['Apple', 'Banana', 'Orange'], classes
-          print('Model metadata:', classes)
+          model_size_mb = Path('models/best_model.keras').stat().st_size / (1024 * 1024)
+          print(f'Best model size: {model_size_mb:.2f} MB')
+          if model_size_mb >= 95:
+              raise SystemExit('best_model.keras is too large for normal GitHub repository storage')
           PY
 
       - name: Evaluate model
         run: python evaluate.py
 
-      - name: Upload trained model and results
+      - name: Upload trained model and results as artifact
         uses: actions/upload-artifact@v4
         with:
           name: fruit-classifier-model
@@ -73,3 +80,15 @@ jobs:
             models/class_names.json
             results/*
           if-no-files-found: error
+
+      - name: Publish best model to repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add models/best_model.keras models/class_names.json
+          if git diff --cached --quiet; then
+            echo "No model changes to publish."
+          else
+            git commit -m "Publish trained fruit classifier model"
+            git push
+          fi
