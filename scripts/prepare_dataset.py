@@ -5,13 +5,8 @@ Run from the repository root:
 
 The script downloads the Fruits-360 dataset through KaggleHub, finds the
 Apple, Banana and Orange classes, and creates the dataset structure expected
-by train.py:
-
-    dataset/train/<class>
-    dataset/validation/<class>
-
-The original dataset remains in KaggleHub's cache; only the selected images
-are copied into this project.
+by train.py. It deliberately keeps the downloaded source outside the repo
+and copies only a compact, deterministic subset into dataset/.
 """
 from __future__ import annotations
 
@@ -38,20 +33,26 @@ def locate_source(root: Path, class_name: str) -> Path:
         raise FileNotFoundError(
             f"Could not find class folder '{class_name}' in downloaded dataset at {root}"
         )
-    # Prefer a directory whose parent is Training or Test, otherwise first match.
-    matches.sort(key=lambda p: (0 if p.parent.name.lower() in {"training", "train"} else 1, len(p.parts)))
+    matches.sort(
+        key=lambda p: (
+            0 if p.parent.name.lower() in {"training", "train"} else 1,
+            len(p.parts),
+        )
+    )
     return matches[0]
 
 
-def copy_selected(source: Path, destination: Path, count: int, rng: random.Random) -> int:
-    images = [p for p in source.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS]
-    if len(images) < count:
-        raise RuntimeError(f"Only {len(images)} images found in {source}; need {count}.")
-    rng.shuffle(images)
+def image_files(source: Path) -> list[Path]:
+    return [
+        p for p in source.iterdir()
+        if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
+    ]
+
+
+def copy_images(images: list[Path], destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
-    for index, image in enumerate(images[:count], start=1):
+    for index, image in enumerate(images, start=1):
         shutil.copy2(image, destination / f"{index:04d}_{image.name}")
-    return count
 
 
 def main() -> None:
@@ -62,19 +63,26 @@ def main() -> None:
     rng = random.Random(SEED)
     if DATASET_ROOT.exists():
         shutil.rmtree(DATASET_ROOT)
+
     for class_name in CLASSES:
         source = locate_source(downloaded, class_name)
-        print(f"Preparing {class_name} from {source}")
-        copy_selected(source, TRAIN_ROOT / class_name, TRAIN_PER_CLASS, rng)
-        # Draw validation images from the same source without overlap.
-        images = [p for p in source.iterdir() if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS]
+        images = image_files(source)
+        required = TRAIN_PER_CLASS + VAL_PER_CLASS
+        if len(images) < required:
+            raise RuntimeError(
+                f"{class_name}: found {len(images)} images but need at least {required}."
+            )
+
         rng.shuffle(images)
-        val_dir = VAL_ROOT / class_name
-        val_dir.mkdir(parents=True, exist_ok=True)
-        # Use a different deterministic slice for validation.
-        for index, image in enumerate(images[TRAIN_PER_CLASS:TRAIN_PER_CLASS + VAL_PER_CLASS], start=1):
-            shutil.copy2(image, val_dir / f"{index:04d}_{image.name}")
-        print(f"  train={TRAIN_PER_CLASS}, validation={VAL_PER_CLASS}")
+        train_images = images[:TRAIN_PER_CLASS]
+        validation_images = images[TRAIN_PER_CLASS:required]
+
+        copy_images(train_images, TRAIN_ROOT / class_name)
+        copy_images(validation_images, VAL_ROOT / class_name)
+        print(
+            f"{class_name}: train={len(train_images)}, "
+            f"validation={len(validation_images)}"
+        )
 
     print("\nDataset preparation complete.")
     print(f"Created: {DATASET_ROOT}")
