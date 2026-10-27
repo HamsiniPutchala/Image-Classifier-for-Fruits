@@ -6,6 +6,7 @@ on:
 jobs:
   train:
     runs-on: ubuntu-22.04
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -18,13 +19,50 @@ jobs:
           cache-dependency-path: requirements-train.txt
 
       - name: Install training dependencies
-        run: python -m pip install --upgrade pip && python -m pip install -r requirements-train.txt
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements-train.txt
+
+      - name: Verify Python and dependencies
+        run: |
+          python --version
+          python -c "import tensorflow, numpy, pandas, matplotlib, seaborn, sklearn, PIL, kagglehub; print('All training dependencies imported successfully')"
 
       - name: Download and prepare Fruits-360 dataset
         run: python scripts/prepare_dataset.py
 
+      - name: Verify prepared dataset
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          classes = ['Apple', 'Banana', 'Orange']
+          for split in ['train', 'validation']:
+              for cls in classes:
+                  path = Path('dataset') / split / cls
+                  count = len(list(path.glob('*'))) if path.exists() else 0
+                  print(f'{split}/{cls}: {count} files')
+                  if count == 0:
+                      raise SystemExit(f'Missing dataset files in {path}')
+          PY
+
       - name: Train CNN model
         run: python train.py
+
+      - name: Verify trained model and metadata
+        run: |
+          test -s models/best_model.keras
+          test -s models/fruit_classifier.keras
+          test -s models/class_names.json
+          python - <<'PY'
+          import json
+          with open('models/class_names.json', encoding='utf-8') as f:
+              classes = json.load(f)
+          assert classes == ['Apple', 'Banana', 'Orange'], classes
+          print('Model metadata:', classes)
+          PY
+
+      - name: Evaluate model
+        run: python evaluate.py
 
       - name: Upload trained model and results
         uses: actions/upload-artifact@v4
