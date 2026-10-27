@@ -5,7 +5,6 @@ import os
 import logging
 from typing import Tuple
 
-import tensorflow as tf
 from tensorflow import keras
 from tensorflow.keras import layers, models
 
@@ -27,43 +26,39 @@ MODELS_PATH = 'models'
 RESULTS_PATH = 'results'
 IMAGE_SIZE = (128, 128)
 BATCH_SIZE = 32
-EPOCHS = 50
+EPOCHS = 20
 
 
 def build_cnn_model(num_classes: int) -> keras.Model:
+    """Build a compact CNN with strong feature extraction and a small model size."""
     model = models.Sequential([
         layers.Input(shape=(IMAGE_SIZE[0], IMAGE_SIZE[1], 3)),
-        layers.Conv2D(32, (3, 3), padding='same', activation='relu'),
+
+        layers.Conv2D(32, 3, padding='same', activation='relu'),
         layers.BatchNormalization(),
-        layers.Conv2D(32, (3, 3), padding='same', activation='relu'),
+        layers.MaxPooling2D(2),
+        layers.Dropout(0.20),
+
+        layers.Conv2D(64, 3, padding='same', activation='relu'),
         layers.BatchNormalization(),
-        layers.MaxPooling2D((2, 2)),
+        layers.MaxPooling2D(2),
         layers.Dropout(0.25),
-        layers.Conv2D(64, (3, 3), padding='same', activation='relu'),
+
+        layers.Conv2D(128, 3, padding='same', activation='relu'),
         layers.BatchNormalization(),
-        layers.Conv2D(64, (3, 3), padding='same', activation='relu'),
+        layers.MaxPooling2D(2),
+        layers.Dropout(0.30),
+
+        layers.Conv2D(192, 3, padding='same', activation='relu'),
         layers.BatchNormalization(),
-        layers.MaxPooling2D((2, 2)),
-        layers.Dropout(0.25),
-        layers.Conv2D(128, (3, 3), padding='same', activation='relu'),
+        layers.MaxPooling2D(2),
+        layers.Dropout(0.30),
+
+        # GlobalAveragePooling avoids the very large Flatten -> Dense layer.
+        layers.GlobalAveragePooling2D(),
+        layers.Dense(128, activation='relu'),
         layers.BatchNormalization(),
-        layers.Conv2D(128, (3, 3), padding='same', activation='relu'),
-        layers.BatchNormalization(),
-        layers.MaxPooling2D((2, 2)),
-        layers.Dropout(0.25),
-        layers.Conv2D(256, (3, 3), padding='same', activation='relu'),
-        layers.BatchNormalization(),
-        layers.Conv2D(256, (3, 3), padding='same', activation='relu'),
-        layers.BatchNormalization(),
-        layers.MaxPooling2D((2, 2)),
-        layers.Dropout(0.25),
-        layers.Flatten(),
-        layers.Dense(512, activation='relu'),
-        layers.BatchNormalization(),
-        layers.Dropout(0.5),
-        layers.Dense(256, activation='relu'),
-        layers.BatchNormalization(),
-        layers.Dropout(0.5),
+        layers.Dropout(0.40),
         layers.Dense(num_classes, activation='softmax')
     ])
     return model
@@ -81,13 +76,13 @@ def compile_model(model: keras.Model) -> keras.Model:
 def get_callbacks(model_save_path: str) -> list:
     return [
         keras.callbacks.EarlyStopping(
-            monitor='val_loss', patience=10, restore_best_weights=True, verbose=1
+            monitor='val_loss', patience=5, restore_best_weights=True, verbose=1
         ),
         keras.callbacks.ModelCheckpoint(
             model_save_path, monitor='val_accuracy', save_best_only=True, verbose=1
         ),
         keras.callbacks.ReduceLROnPlateau(
-            monitor='val_loss', factor=0.5, patience=5, min_lr=1e-7, verbose=1
+            monitor='val_loss', factor=0.5, patience=3, min_lr=1e-6, verbose=1
         ),
     ]
 
