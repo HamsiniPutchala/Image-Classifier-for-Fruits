@@ -1,401 +1,201 @@
-"""Streamlit web application for fruit image classification."""
+"""Advanced Streamlit application for fruit image classification."""
 
-import os
-import cv2
+from __future__ import annotations
+
 import csv
-import logging
 from datetime import datetime
-from typing import Optional
+from pathlib import Path
+from typing import Any
+
 import numpy as np
-import tensorflow as tf
-import streamlit as st
-from PIL import Image
 import pandas as pd
+import streamlit as st
+import tensorflow as tf
+from PIL import Image
 
-from utils import (
-    load_and_preprocess_image,
-    get_class_names,
-    IMAGE_SIZE,
-)
+from utils import IMAGE_SIZE, get_class_names, load_and_preprocess_image
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+BASE_DIR = Path(__file__).resolve().parent
+MODEL_CANDIDATES = [BASE_DIR / "models" / "best_model.keras", BASE_DIR / "models" / "fruit_classifier.keras"]
+DATASET_PATH = BASE_DIR / "dataset"
+UPLOADS_PATH = BASE_DIR / "uploads"
+HISTORY_PATH = UPLOADS_PATH / "prediction_history.csv"
+DEFAULT_CLASSES = ["Apple", "Banana", "Orange"]
+UPLOADS_PATH.mkdir(exist_ok=True)
 
-# Constants
-DATASET_PATH = 'dataset'
-MODELS_PATH = 'models'
-UPLOADS_PATH = 'uploads'
-PREDICTIONS_CSV = os.path.join(UPLOADS_PATH, 'prediction_history.csv')
-
-# Create uploads directory
-os.makedirs(UPLOADS_PATH, exist_ok=True)
+st.set_page_config(page_title="FruitVision AI", page_icon="🍎", layout="wide", initial_sidebar_state="expanded")
 
 
-@st.cache_resource
-def load_model():
-    """Load the trained model with caching."""
-    model_path = os.path.join(MODELS_PATH, 'best_model.keras')
-    if not os.path.exists(model_path):
-        st.error(f"Model not found at {model_path}")
-        st.stop()
-    return tf.keras.models.load_model(model_path)
+@st.cache_resource(show_spinner="Loading the CNN model...")
+def load_model() -> tf.keras.Model:
+    for path in MODEL_CANDIDATES:
+        if path.exists():
+            return tf.keras.models.load_model(path)
+    raise FileNotFoundError("No trained model was found. Add best_model.keras or fruit_classifier.keras to models/.")
 
 
 @st.cache_data
-def load_classes():
-    """Load class names with caching."""
-    return get_class_names(DATASET_PATH)
+def load_classes() -> list[str]:
+    try:
+        if DATASET_PATH.exists():
+            classes = get_class_names(str(DATASET_PATH))
+            if classes:
+                return list(classes)
+    except Exception:
+        pass
+    return DEFAULT_CLASSES.copy()
 
 
-def predict_image(model, image_array: np.ndarray, class_names: list) -> dict:
-    """
-    Predict fruit class for an image array.
-    
-    Args:
-        model: Trained model
-        image_array (np.ndarray): Preprocessed image array
-        class_names (list): List of class names
-        
-    Returns:
-        dict: Prediction results
-    """
-    image_batch = np.expand_dims(image_array, axis=0)
-    predictions = model.predict(image_batch, verbose=0)
-    predicted_probs = predictions[0]
-    
-    predicted_idx = np.argmax(predicted_probs)
-    predicted_class = class_names[predicted_idx]
-    confidence = float(predicted_probs[predicted_idx])
-    
-    # Get top-3 predictions
-    top_3_indices = np.argsort(predicted_probs)[::-1][:3]
-    top_3_predictions = [
-        {
-            'class': class_names[idx],
-            'confidence': float(predicted_probs[idx]),
-            'percentage': float(predicted_probs[idx] * 100)
-        }
-        for idx in top_3_indices
-    ]
-    
-    results = {
-        'predicted_class': predicted_class,
-        'confidence': confidence,
-        'confidence_percentage': confidence * 100,
-        'top_3_predictions': top_3_predictions,
-        'probabilities': {
-            class_names[i]: float(predicted_probs[i])
-            for i in range(len(class_names))
-        }
+def predict_image(model: tf.keras.Model, image_array: np.ndarray, class_names: list[str]) -> dict[str, Any]:
+    probabilities = np.asarray(model.predict(np.expand_dims(image_array, axis=0), verbose=0)[0], dtype=float)
+    if len(probabilities) != len(class_names):
+        class_names = [f"Class {i}" for i in range(len(probabilities))]
+    probabilities = np.clip(probabilities, 0, None)
+    total = probabilities.sum()
+    if total > 0:
+        probabilities /= total
+    order = np.argsort(probabilities)[::-1]
+    top = [{"class": class_names[int(i)], "confidence": float(probabilities[int(i)]), "percentage": float(probabilities[int(i)] * 100)} for i in order[:min(3, len(order))]]
+    best = top[0]
+    return {
+        "predicted_class": best["class"],
+        "confidence": best["confidence"],
+        "confidence_percentage": best["percentage"],
+        "top_predictions": top,
+        "probabilities": {class_names[int(i)]: float(probabilities[int(i)]) for i in order},
     }
-    
-    return results
 
 
-def save_prediction_history(image_name: str, predicted_class: str, 
-                           confidence: float, method: str) -> None:
-    """
-    Save prediction history to CSV file.
-    
-    Args:
-        image_name (str): Name of the image
-        predicted_class (str): Predicted fruit class
-        confidence (float): Confidence percentage
-        method (str): Upload method ('file', 'webcam')
-    """
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    
-    # Create CSV file if it doesn't exist
-    if not os.path.exists(PREDICTIONS_CSV):
-        with open(PREDICTIONS_CSV, 'w', newline='') as f:
-            writer = csv.writer(f)
-            writer.writerow(['Timestamp', 'Image Name', 'Predicted Class', 
-                           'Confidence (%)', 'Method'])
-    
-    # Append prediction
-    with open(PREDICTIONS_CSV, 'a', newline='') as f:
-        writer = csv.writer(f)
-        writer.writerow([timestamp, image_name, predicted_class, 
-                        f'{confidence:.2f}', method])
+def confidence_label(confidence: float) -> str:
+    if confidence >= 0.85:
+        return "High confidence"
+    if confidence >= 0.60:
+        return "Moderate confidence"
+    return "Low confidence"
 
 
-def process_uploaded_file(uploaded_file) -> Optional[np.ndarray]:
-    """
-    Process uploaded image file.
-    
-    Args:
-        uploaded_file: Streamlit uploaded file
-        
-    Returns:
-        Optional[np.ndarray]: Preprocessed image array or None
-    """
-    try:
-        image = Image.open(uploaded_file).convert('RGB')
-        return load_and_preprocess_image(uploaded_file, IMAGE_SIZE)
-    except Exception as e:
-        logger.error(f"Error processing uploaded file: {str(e)}")
-        return None
+def save_prediction_history(image_name: str, predicted_class: str, confidence: float, method: str) -> None:
+    exists = HISTORY_PATH.exists()
+    with HISTORY_PATH.open("a", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        if not exists:
+            writer.writerow(["Timestamp", "Image Name", "Predicted Class", "Confidence (%)", "Method"])
+        writer.writerow([datetime.now().strftime("%Y-%m-%d %H:%M:%S"), image_name, predicted_class, f"{confidence:.2f}", method])
 
 
-def process_webcam_frame(frame) -> Optional[np.ndarray]:
-    """
-    Process webcam frame.
-    
-    Args:
-        frame: OpenCV frame
-        
-    Returns:
-        Optional[np.ndarray]: Preprocessed image array or None
-    """
-    try:
-        # Convert BGR to RGB
-        rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        # Resize
-        resized = cv2.resize(rgb_frame, IMAGE_SIZE)
-        # Normalize
-        normalized = resized / 255.0
-        return normalized
-    except Exception as e:
-        logger.error(f"Error processing webcam frame: {str(e)}")
-        return None
-
-
-def main():
-    """Main Streamlit application."""
-    # Page configuration
-    st.set_page_config(
-        page_title="🍎 Fruit Image Classifier",
-        page_icon="🍎",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-    
-    # Custom CSS
-    st.markdown("""
-        <style>
-            .main {
-                padding: 2rem;
-            }
-            .prediction-box {
-                padding: 1.5rem;
-                border-radius: 0.5rem;
-                background-color: #f0f2f6;
-                margin: 1rem 0;
-            }
-            .confidence-high {
-                color: #00c851;
-                font-weight: bold;
-            }
-            .confidence-medium {
-                color: #ffbb33;
-                font-weight: bold;
-            }
-            .confidence-low {
-                color: #ff4444;
-                font-weight: bold;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-    
-    # Load model and classes
-    model = load_model()
-    class_names = load_classes()
-    
-    # Sidebar
-    with st.sidebar:
-        st.title("🔧 Settings")
-        st.markdown("---")
-        
-        page = st.radio(
-            "Select Mode:",
-            ["📸 Image Upload", "🎥 Webcam Prediction", "📊 History"]
-        )
-        
-        st.markdown("---")
-        st.info(
-            "🍎 This app classifies images of:\n"
-            "- Apple\n"
-            "- Banana\n"
-            "- Orange"
-        )
-    
-    # Main content
-    st.title("🍎 Fruit Image Classifier")
-    st.markdown("Using CNN Deep Learning Model")
-    st.markdown("---")
-    
-    if page == "📸 Image Upload":
-        image_upload_page(model, class_names)
-    elif page == "🎥 Webcam Prediction":
-        webcam_prediction_page(model, class_names)
-    else:
-        history_page()
-
-
-def image_upload_page(model, class_names):
-    """Image upload page."""
+def show_prediction(results: dict[str, Any]) -> None:
+    confidence = results["confidence"]
+    st.success(f"Predicted fruit: **{results['predicted_class']}**")
     col1, col2 = st.columns(2)
-    
-    with col1:
-        st.subheader("📤 Upload Image")
-        uploaded_file = st.file_uploader(
-            "Choose an image...",
-            type=['jpg', 'jpeg', 'png'],
-            help="Upload an image of Apple, Banana, or Orange"
-        )
-        
-        if uploaded_file:
-            # Display uploaded image
-            image = Image.open(uploaded_file)
-            st.image(image, caption="Uploaded Image", use_column_width=True)
-    
-    with col2:
-        st.subheader("🎯 Prediction Results")
-        
-        if uploaded_file:
-            # Process image
-            image_array = process_uploaded_file(uploaded_file)
-            
-            if image_array is not None:
-                # Get prediction
-                results = predict_image(model, image_array, class_names)
-                
-                # Display main prediction
-                st.markdown(f"""
-                    <div class="prediction-box">
-                        <h3>Predicted Fruit: <span class="confidence-high">{results['predicted_class']}</span></h3>
-                        <p style="font-size: 1.2em; margin: 0.5em 0;">
-                            Confidence: <span class="confidence-high">{results['confidence_percentage']:.2f}%</span>
-                        </p>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                # Top-3 Predictions
-                st.markdown("### Top 3 Predictions")
-                for i, pred in enumerate(results['top_3_predictions'], 1):
-                    col1, col2 = st.columns([3, 1])
-                    with col1:
-                        st.progress(pred['confidence'])
-                    with col2:
-                        st.markdown(f"<p style='text-align: center; margin-top: 0.5em;'><strong>{pred['class']}</strong><br>{pred['percentage']:.1f}%</p>", unsafe_allow_html=True)
-                
-                # All probabilities
-                st.markdown("### All Class Probabilities")
-                prob_data = pd.DataFrame([
-                    {'Class': class_name, 'Probability': prob * 100}
-                    for class_name, prob in results['probabilities'].items()
-                ])
-                st.bar_chart(prob_data.set_index('Class'))
-                
-                # Save to history
-                save_prediction_history(
-                    uploaded_file.name,
-                    results['predicted_class'],
-                    results['confidence_percentage'],
-                    'file'
-                )
-                
-                st.success("✅ Prediction saved to history!")
-            else:
-                st.error("❌ Error processing image. Please try another.")
+    col1.metric("Confidence", f"{results['confidence_percentage']:.2f}%")
+    col2.metric("Assessment", confidence_label(confidence))
+    st.progress(confidence, text=f"Model confidence: {results['confidence_percentage']:.1f}%")
+    st.markdown("#### Top predictions")
+    for rank, item in enumerate(results["top_predictions"], start=1):
+        st.write(f"**{rank}. {item['class']}** — {item['percentage']:.2f}%")
+        st.progress(item["confidence"])
+    probability_df = pd.DataFrame({"Fruit": list(results["probabilities"].keys()), "Probability (%)": [v * 100 for v in results["probabilities"].values()]})
+    st.bar_chart(probability_df.set_index("Fruit"))
 
 
-def webcam_prediction_page(model, class_names):
-    """Webcam prediction page."""
-    st.subheader("🎥 Real-time Webcam Prediction")
-    
-    camera_image = st.camera_input("Capture an image with your webcam")
-    
-    if camera_image:
-        # Convert to PIL Image
-        image = Image.open(camera_image)
-        
-        # Process image
-        image_array = process_uploaded_file(camera_image)
-        
-        if image_array is not None:
-            col1, col2 = st.columns(2)
-            
-            with col1:
-                st.image(image, caption="Captured Image", use_column_width=True)
-            
-            with col2:
-                # Get prediction
-                results = predict_image(model, image_array, class_names)
-                
-                # Display results
-                st.markdown(f"""
-                    <div class="prediction-box">
-                        <h3>Predicted Fruit: <span class="confidence-high">{results['predicted_class']}</span></h3>
-                        <p style="font-size: 1.2em; margin: 0.5em 0;">
-                            Confidence: <span class="confidence-high">{results['confidence_percentage']:.2f}%</span>
-                        </p>
-                    </div>
-                """, unsafe_allow_html=True)
-                
-                # Top-3 Predictions
-                st.markdown("### Top 3 Predictions")
-                for pred in results['top_3_predictions']:
-                    st.progress(pred['confidence'])
-                    st.text(f"{pred['class']}: {pred['percentage']:.2f}%")
-                
-                # Save to history
-                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                save_prediction_history(
-                    f"webcam_{timestamp}.jpg",
-                    results['predicted_class'],
-                    results['confidence_percentage'],
-                    'webcam'
-                )
-                
-                st.success("✅ Prediction saved to history!")
+def upload_page(model: tf.keras.Model, classes: list[str]) -> None:
+    st.header("📸 Classify Fruit Images")
+    st.caption("Upload one or more fruit images and get CNN predictions with confidence scores.")
+    files = st.file_uploader("Choose JPG, JPEG or PNG images", type=["jpg", "jpeg", "png"], accept_multiple_files=True, help="For best results, use a clear image containing one fruit.")
+    if not files:
+        st.info("Upload an image to start the prediction.")
+        return
+    for uploaded_file in files:
+        st.divider()
+        left, right = st.columns([1, 1.15])
+        with left:
+            image = Image.open(uploaded_file).convert("RGB")
+            st.image(image, caption=uploaded_file.name, use_container_width=True)
+            st.caption(f"Image size: {image.width} × {image.height}px")
+        with right:
+            try:
+                results = predict_image(model, load_and_preprocess_image(uploaded_file, IMAGE_SIZE), classes)
+                show_prediction(results)
+                save_prediction_history(uploaded_file.name, results["predicted_class"], results["confidence_percentage"], "upload")
+            except Exception as exc:
+                st.error(f"Unable to classify this image: {exc}")
 
 
-def history_page():
-    """Prediction history page."""
-    st.subheader("📊 Prediction History")
-    
-    if os.path.exists(PREDICTIONS_CSV):
-        df = pd.read_csv(PREDICTIONS_CSV)
-        
-        # Display statistics
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            st.metric("Total Predictions", len(df))
-        
-        with col2:
-            most_common = df['Predicted Class'].mode()[0] if len(df) > 0 else "N/A"
-            st.metric("Most Predicted", most_common)
-        
-        with col3:
-            avg_confidence = df['Confidence (%)'].mean() if len(df) > 0 else 0
-            st.metric("Average Confidence", f"{avg_confidence:.2f}%")
-        
-        st.markdown("---")
-        
-        # Display history table
-        st.markdown("### Prediction Records")
-        st.dataframe(df, use_container_width=True)
-        
-        # Download history
-        csv = df.to_csv(index=False)
-        st.download_button(
-            label="📥 Download History as CSV",
-            data=csv,
-            file_name=f"prediction_history_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
-        
-        # Clear history
-        if st.button("🗑️ Clear History", help="This will delete all prediction history"):
-            os.remove(PREDICTIONS_CSV)
-            st.success("History cleared!")
-            st.rerun()
+def camera_page(model: tf.keras.Model, classes: list[str]) -> None:
+    st.header("📷 Camera Prediction")
+    st.caption("Capture a fruit image directly from your device camera.")
+    camera_image = st.camera_input("Take a picture")
+    if camera_image is None:
+        st.info("Allow camera access and capture an image to continue.")
+        return
+    image = Image.open(camera_image).convert("RGB")
+    left, right = st.columns(2)
+    with left:
+        st.image(image, caption="Captured image", use_container_width=True)
+    with right:
+        try:
+            results = predict_image(model, load_and_preprocess_image(camera_image, IMAGE_SIZE), classes)
+            show_prediction(results)
+            save_prediction_history("camera_capture.jpg", results["predicted_class"], results["confidence_percentage"], "camera")
+        except Exception as exc:
+            st.error(f"Unable to classify the captured image: {exc}")
+
+
+def history_page() -> None:
+    st.header("📊 Prediction Dashboard")
+    if not HISTORY_PATH.exists():
+        st.info("No predictions have been recorded yet.")
+        return
+    df = pd.read_csv(HISTORY_PATH)
+    if df.empty:
+        st.info("No prediction records available.")
+        return
+    col1, col2, col3, col4 = st.columns(4)
+    col1.metric("Predictions", len(df))
+    col2.metric("Most predicted", str(df["Predicted Class"].mode().iloc[0]))
+    col3.metric("Average confidence", f"{df['Confidence (%)'].mean():.1f}%")
+    col4.metric("High confidence", f"{(df['Confidence (%)'] >= 85).mean() * 100:.1f}%")
+    st.divider()
+    st.dataframe(df, use_container_width=True, hide_index=True)
+    st.download_button("⬇️ Download prediction history", df.to_csv(index=False).encode("utf-8"), file_name="fruit_prediction_history.csv", mime="text/csv")
+    if st.button("🗑️ Clear prediction history"):
+        HISTORY_PATH.unlink(missing_ok=True)
+        st.rerun()
+
+
+def about_page(classes: list[str]) -> None:
+    st.header("ℹ️ About FruitVision AI")
+    st.markdown("**FruitVision AI** is a CNN-based fruit image classification application with confidence scoring, top-3 predictions, multi-image upload, camera prediction, analytics, and CSV export.")
+    st.subheader("Supported classes")
+    st.write(" • ".join(classes))
+    st.info("For reliable results, use a clear image with good lighting and a visible fruit.")
+
+
+def main() -> None:
+    st.markdown("<style>.block-container {padding-top: 2rem; padding-bottom: 3rem;} [data-testid=\"stMetricValue\"] {font-size: 1.6rem;}</style>", unsafe_allow_html=True)
+    st.title("🍎 FruitVision AI")
+    st.caption("Advanced Fruit Image Classification using Convolutional Neural Networks")
+    try:
+        model = load_model()
+        classes = load_classes()
+    except Exception as exc:
+        st.error(str(exc))
+        st.stop()
+    with st.sidebar:
+        st.title("Navigation")
+        page = st.radio("Choose a mode", ["📸 Image Classifier", "📷 Camera", "📊 Dashboard", "ℹ️ About"])
+        st.divider()
+        st.success(f"Model loaded • {len(classes)} classes")
+        st.caption("CNN inference engine: TensorFlow/Keras")
+    if page == "📸 Image Classifier":
+        upload_page(model, classes)
+    elif page == "📷 Camera":
+        camera_page(model, classes)
+    elif page == "📊 Dashboard":
+        history_page()
     else:
-        st.info("📭 No prediction history yet. Make some predictions to see them here!")
+        about_page(classes)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main()
