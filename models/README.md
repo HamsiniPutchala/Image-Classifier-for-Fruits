@@ -1,13 +1,24 @@
-# Model file
+# FruitVision AI model
 
-Place the trained Keras model here as:
+The training pipeline creates the trained CNN as:
 
-`best_model.keras`
+`models/best_model.keras`
 
-The Streamlit application automatically checks for `models/best_model.keras` and `models/fruit_classifier.keras`.
+It uses the fixed three-class order: `Apple`, `Banana`, `Orange`.
 
-## Important
+## Automatic setup
 
-The repository currently does not contain a trained `.keras` model. Uploading a model is required for permanent predictions after deployment. The app also provides a **Model Setup** page where a `.keras` file can be uploaded temporarily for testing.
+From the repository root on Windows, double-click:
 
-If the model is larger than GitHub's normal file limit, use Git LFS or a model-hosting service and update `app.py` to load it from that location.
+`scripts/setup_and_train.bat`
+
+or run:
+
+```bash
+python scripts/prepare_dataset.py
+python train.py
+```
+
+The preparation script downloads the public Fruits-360 dataset through KaggleHub and copies only the Apple, Banana and Orange images needed by this project. The full source dataset is not stored in this repository.
+
+The trained `.keras` file is generated locally. If you want to deploy it directly from GitHub, keep the model below GitHub's normal file-size limits; otherwise use Git LFS or external model hosting.
