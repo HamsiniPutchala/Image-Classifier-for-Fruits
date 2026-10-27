@@ -6,10 +6,14 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: fruit-classifier-training
+  cancel-in-progress: true
+
 jobs:
   train:
     runs-on: ubuntu-22.04
-    timeout-minutes: 60
+    timeout-minutes: 30
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -48,7 +52,7 @@ jobs:
                       raise SystemExit(f'Missing dataset files in {path}')
           PY
 
-      - name: Train CNN model
+      - name: Train MobileNetV2 model
         run: python train.py
 
       - name: Verify trained model and metadata
@@ -89,6 +93,6 @@ jobs:
           if git diff --cached --quiet; then
             echo "No model changes to publish."
           else
-            git commit -m "Publish trained fruit classifier model"
+            git commit -m "Publish trained MobileNetV2 fruit classifier"
             git push
           fi
