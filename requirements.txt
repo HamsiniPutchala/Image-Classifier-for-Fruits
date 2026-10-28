@@ -1,7 +1,7 @@
-# Streamlit Cloud deployment
-# Pin versions with Python 3.14-compatible wheels to avoid source builds.
-tensorflow-cpu==2.22.0rc0
-numpy==2.1.3
+# Streamlit Cloud deployment - Python 3.13
+# Stable binary wheels to avoid source builds.
+tensorflow==2.20.0
+numpy==2.0.2
 pandas==2.2.3
 matplotlib==3.9.4
 seaborn==0.13.2
