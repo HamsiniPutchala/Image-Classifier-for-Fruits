@@ -65,7 +65,16 @@ def get_predictions(
         probabilities.extend(probs)
         preds, _ = get_predictions_from_probabilities(probs)
         predicted_labels.extend(preds)
-        true_labels.extend(np.argmax(labels.numpy(), axis=1))
+
+        # Keras DirectoryIterator can return labels as either a NumPy array
+        # or a Tensor. Support both so evaluation works across TensorFlow/Keras
+        # versions and Python environments.
+        if hasattr(labels, 'numpy'):
+            labels_array = labels.numpy()
+        else:
+            labels_array = np.asarray(labels)
+
+        true_labels.extend(np.argmax(labels_array, axis=1))
 
     return np.array(true_labels), np.array(predicted_labels), np.array(probabilities)
 
