@@ -15,8 +15,6 @@ import streamlit as st
 import tensorflow as tf
 from PIL import Image
 
-from utils import IMAGE_SIZE, get_class_names
-
 BASE_DIR = Path(__file__).resolve().parent
 MODEL_CANDIDATES = [
     BASE_DIR / "models" / "best_model.keras",
@@ -27,6 +25,7 @@ DATASET_PATH = BASE_DIR / "dataset"
 UPLOADS_PATH = BASE_DIR / "uploads"
 HISTORY_PATH = UPLOADS_PATH / "prediction_history.csv"
 DEFAULT_CLASSES = ["Apple", "Banana", "Orange"]
+IMAGE_SIZE = (128, 128)
 UPLOADS_PATH.mkdir(exist_ok=True)
 
 st.set_page_config(
@@ -57,14 +56,14 @@ def load_classes() -> list[str]:
         except (OSError, json.JSONDecodeError):
             pass
 
-    try:
-        train_path = DATASET_PATH / "train"
-        if train_path.exists():
-            classes = get_class_names(str(DATASET_PATH))
-            if classes:
-                return list(classes)
-    except Exception:
-        pass
+    train_path = DATASET_PATH / "train"
+    if train_path.exists():
+        classes = sorted(
+            p.name for p in train_path.iterdir() if p.is_dir()
+        )
+        if classes:
+            return classes
+
     return DEFAULT_CLASSES.copy()
 
 
@@ -82,7 +81,7 @@ def confidence_label(confidence: float) -> str:
 
 
 def image_quality(image: Image.Image) -> dict[str, Any]:
-    gray = np.asarray(image.convert("RGB").convert("L"), dtype=np.float32)
+    gray = np.asarray(image.convert("L"), dtype=np.float32)
     brightness = float(gray.mean())
     contrast = float(gray.std())
     sharpness = float(np.var(gray[:, 1:] - gray[:, :-1]))
