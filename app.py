@@ -1,4 +1,4 @@
-"""FruitVision AI - advanced Streamlit fruit classifier."""
+"""Image Classifier for Fruits - advanced Streamlit fruit classifier."""
 from __future__ import annotations
 
 import csv
@@ -29,7 +29,7 @@ IMAGE_SIZE = (128, 128)
 UPLOADS_PATH.mkdir(exist_ok=True)
 
 st.set_page_config(
-    page_title="FruitVision AI",
+    page_title="Image Classifier for Fruits",
     page_icon="🍎",
     layout="wide",
     initial_sidebar_state="expanded",
@@ -58,9 +58,7 @@ def load_classes() -> list[str]:
 
     train_path = DATASET_PATH / "train"
     if train_path.exists():
-        classes = sorted(
-            p.name for p in train_path.iterdir() if p.is_dir()
-        )
+        classes = sorted(p.name for p in train_path.iterdir() if p.is_dir())
         if classes:
             return classes
 
@@ -103,14 +101,8 @@ def image_quality(image: Image.Image) -> dict[str, Any]:
     }
 
 
-def predict_image(
-    model: tf.keras.Model,
-    image_array: np.ndarray,
-    class_names: list[str],
-) -> dict[str, Any]:
-    raw = np.asarray(
-        model.predict(np.expand_dims(image_array, axis=0), verbose=0)[0], dtype=float
-    )
+def predict_image(model: tf.keras.Model, image_array: np.ndarray, class_names: list[str]) -> dict[str, Any]:
+    raw = np.asarray(model.predict(np.expand_dims(image_array, axis=0), verbose=0)[0], dtype=float)
     if len(raw) == 0:
         raise ValueError("The model returned no predictions.")
 
@@ -142,43 +134,24 @@ def predict_image(
         "confidence": best["confidence"],
         "confidence_percentage": best["percentage"],
         "top_predictions": top,
-        "probabilities": {
-            class_names[int(i)]: float(probabilities[int(i)]) for i in order
-        },
+        "probabilities": {class_names[int(i)]: float(probabilities[int(i)]) for i in order},
     }
 
 
-def save_prediction_history(
-    image_name: str,
-    predicted_class: str,
-    confidence: float,
-    method: str,
-    quality: str,
-) -> None:
+def save_prediction_history(image_name: str, predicted_class: str, confidence: float, method: str, quality: str) -> None:
     exists = HISTORY_PATH.exists()
     with HISTORY_PATH.open("a", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         if not exists:
-            writer.writerow(
-                [
-                    "Timestamp",
-                    "Image Name",
-                    "Predicted Class",
-                    "Confidence (%)",
-                    "Method",
-                    "Image Quality",
-                ]
-            )
-        writer.writerow(
-            [
-                datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                image_name,
-                predicted_class,
-                f"{confidence:.2f}",
-                method,
-                quality,
-            ]
-        )
+            writer.writerow(["Timestamp", "Image Name", "Predicted Class", "Confidence (%)", "Method", "Image Quality"])
+        writer.writerow([
+            datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            image_name,
+            predicted_class,
+            f"{confidence:.2f}",
+            method,
+            quality,
+        ])
 
 
 def show_prediction(results: dict[str, Any], quality: dict[str, Any]) -> None:
@@ -198,18 +171,14 @@ def show_prediction(results: dict[str, Any], quality: dict[str, Any]) -> None:
     for rank, item in enumerate(results["top_predictions"], start=1):
         st.write(f"**{rank}. {item['class']}** — {item['percentage']:.2f}%")
         st.progress(item["confidence"])
-    probability_df = pd.DataFrame(
-        {
-            "Fruit": list(results["probabilities"].keys()),
-            "Probability (%)": [v * 100 for v in results["probabilities"].values()],
-        }
-    )
+    probability_df = pd.DataFrame({
+        "Fruit": list(results["probabilities"].keys()),
+        "Probability (%)": [v * 100 for v in results["probabilities"].values()],
+    })
     st.bar_chart(probability_df.set_index("Fruit"))
 
 
-def classify_bytes(
-    model: tf.keras.Model, data: bytes, classes: list[str]
-) -> tuple[Image.Image, dict[str, Any], dict[str, Any]]:
+def classify_bytes(model: tf.keras.Model, data: bytes, classes: list[str]) -> tuple[Image.Image, dict[str, Any], dict[str, Any]]:
     image = Image.open(io.BytesIO(data)).convert("RGB")
     quality = image_quality(image)
     results = predict_image(model, preprocess_pil(image), classes)
@@ -217,13 +186,9 @@ def classify_bytes(
 
 
 def upload_page(model: tf.keras.Model, classes: list[str]) -> None:
-    st.header("📸 AI Fruit Classifier")
+    st.header("📸 Image Classifier for Fruits")
     st.caption("Batch classification with confidence, image-quality checks and ranked predictions.")
-    files = st.file_uploader(
-        "Upload fruit images",
-        type=["jpg", "jpeg", "png"],
-        accept_multiple_files=True,
-    )
+    files = st.file_uploader("Upload fruit images", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
     if not files:
         st.info("Upload one or more JPG/PNG images to begin.")
         return
@@ -241,21 +206,13 @@ def upload_page(model: tf.keras.Model, classes: list[str]) -> None:
             try:
                 _, results, quality = classify_bytes(model, data, classes)
                 show_prediction(results, quality)
-                save_prediction_history(
-                    uploaded_file.name,
-                    results["predicted_class"],
-                    results["confidence_percentage"],
-                    "upload",
-                    quality["quality"],
-                )
-                all_rows.append(
-                    {
-                        "Image": uploaded_file.name,
-                        "Prediction": results["predicted_class"],
-                        "Confidence (%)": round(results["confidence_percentage"], 2),
-                        "Quality": quality["quality"],
-                    }
-                )
+                save_prediction_history(uploaded_file.name, results["predicted_class"], results["confidence_percentage"], "upload", quality["quality"])
+                all_rows.append({
+                    "Image": uploaded_file.name,
+                    "Prediction": results["predicted_class"],
+                    "Confidence (%)": round(results["confidence_percentage"], 2),
+                    "Quality": quality["quality"],
+                })
             except Exception as exc:
                 st.error(f"Could not classify {uploaded_file.name}: {exc}")
 
@@ -263,12 +220,7 @@ def upload_page(model: tf.keras.Model, classes: list[str]) -> None:
         st.subheader("Batch results")
         batch_df = pd.DataFrame(all_rows)
         st.dataframe(batch_df, use_container_width=True, hide_index=True)
-        st.download_button(
-            "⬇️ Download batch results",
-            batch_df.to_csv(index=False).encode("utf-8"),
-            "fruit_batch_results.csv",
-            "text/csv",
-        )
+        st.download_button("⬇️ Download batch results", batch_df.to_csv(index=False).encode("utf-8"), "fruit_batch_results.csv", "text/csv")
 
 
 def camera_page(model: tf.keras.Model, classes: list[str]) -> None:
@@ -281,13 +233,7 @@ def camera_page(model: tf.keras.Model, classes: list[str]) -> None:
         image, results, quality = classify_bytes(model, camera_image.getvalue(), classes)
         st.image(image, caption="Captured fruit", width=450)
         show_prediction(results, quality)
-        save_prediction_history(
-            "camera_capture.jpg",
-            results["predicted_class"],
-            results["confidence_percentage"],
-            "camera",
-            quality["quality"],
-        )
+        save_prediction_history("camera_capture.jpg", results["predicted_class"], results["confidence_percentage"], "camera", quality["quality"])
     except Exception as exc:
         st.error(f"Camera prediction failed: {exc}")
 
@@ -310,12 +256,7 @@ def dashboard_page() -> None:
     st.subheader("Prediction distribution")
     st.bar_chart(df["Predicted Class"].value_counts().rename("Predictions"))
     st.dataframe(df, use_container_width=True, hide_index=True)
-    st.download_button(
-        "⬇️ Export complete history",
-        df.to_csv(index=False).encode("utf-8"),
-        "fruit_prediction_history.csv",
-        "text/csv",
-    )
+    st.download_button("⬇️ Export complete history", df.to_csv(index=False).encode("utf-8"), "fruit_prediction_history.csv", "text/csv")
     if st.button("🗑️ Clear history"):
         HISTORY_PATH.unlink(missing_ok=True)
         st.rerun()
@@ -331,13 +272,8 @@ def model_page() -> tf.keras.Model | None:
 
     st.warning("No trained CNN model is bundled with this repository yet.")
     st.markdown("### Model setup")
-    st.write(
-        "Upload your trained `.keras` model below. For permanent deployment, "
-        "place the trained model at `models/best_model.keras`."
-    )
-    model_file = st.file_uploader(
-        "Upload trained Keras model", type=["keras"], key="model_uploader"
-    )
+    st.write("Upload your trained `.keras` model below. For permanent deployment, place the trained model at `models/best_model.keras`.")
+    model_file = st.file_uploader("Upload trained Keras model", type=["keras"], key="model_uploader")
     if model_file:
         try:
             with tempfile.NamedTemporaryFile(suffix=".keras", delete=False) as tmp:
@@ -350,37 +286,30 @@ def model_page() -> tf.keras.Model | None:
 
 
 def about_page(classes: list[str]) -> None:
-    st.header("ℹ️ About FruitVision AI")
+    st.header("ℹ️ About Image Classifier for Fruits")
     st.markdown(
-        "**FruitVision AI** is an internship-ready CNN application for fruit "
-        "recognition with batch inference, camera input, confidence scoring, "
-        "image-quality analysis, analytics and downloadable reports."
+        "**Image Classifier for Fruits** is an internship-ready CNN application for fruit "
+        "recognition with batch inference, camera input, confidence scoring, image-quality analysis, "
+        "analytics and downloadable reports."
     )
     st.subheader("Supported classes")
     st.write(" • ".join(classes))
     st.subheader("Recommended image quality")
-    st.write(
-        "Use one clearly visible fruit, good lighting, moderate background "
-        "clutter and a sharp image for better predictions."
-    )
+    st.write("Use one clearly visible fruit, good lighting, moderate background clutter and a sharp image for better predictions.")
 
 
 def main() -> None:
     st.markdown(
-        "<style>.block-container{padding-top:2rem;padding-bottom:3rem} "
-        "[data-testid=stMetricValue]{font-size:1.6rem}</style>",
+        "<style>.block-container{padding-top:2rem;padding-bottom:3rem} [data-testid=stMetricValue]{font-size:1.6rem}</style>",
         unsafe_allow_html=True,
     )
-    st.title("🍎 FruitVision AI")
+    st.title("🍎 Image Classifier for Fruits")
     st.caption("Advanced CNN-powered Fruit Image Classification System")
     classes = load_classes()
 
     with st.sidebar:
         st.title("Navigation")
-        page = st.radio(
-            "Choose a module",
-            ["📸 Classifier", "📷 Camera", "📊 Dashboard", "⚙️ Model Setup", "ℹ️ About"],
-        )
+        page = st.radio("Choose a module", ["📸 Classifier", "📷 Camera", "📊 Dashboard", "⚙️ Model Setup", "ℹ️ About"])
         st.divider()
         st.info(f"Classes: {len(classes)}")
         st.caption("TensorFlow / Keras CNN inference")
