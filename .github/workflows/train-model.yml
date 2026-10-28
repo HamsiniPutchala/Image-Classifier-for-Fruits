@@ -87,12 +87,21 @@ jobs:
 
       - name: Publish best model to repository
         run: |
+          set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Commit the generated model first.
           git add models/best_model.keras models/class_names.json
           if git diff --cached --quiet; then
             echo "No model changes to publish."
-          else
-            git commit -m "Publish trained MobileNetV2 fruit classifier"
-            git push
+            exit 0
           fi
+          git commit -m "Publish trained MobileNetV2 fruit classifier"
+
+          # Synchronize with any commits added to main after checkout.
+          git fetch origin main
+          git rebase origin/main
+
+          # Push the rebased commit explicitly to main.
+          git push origin HEAD:main
