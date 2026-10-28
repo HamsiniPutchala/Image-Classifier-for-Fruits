@@ -1,419 +1,448 @@
-# 🍎 Fruit Image Classifier using CNN
+# 🍎 Fruit Image Classifier using MobileNetV2
 
-A production-ready Deep Learning project that classifies images of fruits (Apple, Banana, Orange) using Convolutional Neural Networks (CNN) with TensorFlow/Keras.
+An end-to-end deep learning project that classifies fruit images into **Apple, Banana, or Orange** using **MobileNetV2 transfer learning**, TensorFlow/Keras, and an interactive Streamlit application.
 
-![Python](https://img.shields.io/badge/Python-3.11+-blue?style=flat-square&logo=python)
-![TensorFlow](https://img.shields.io/badge/TensorFlow-2.15+-orange?style=flat-square&logo=tensorflow)
-![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)
-![Status](https://img.shields.io/badge/Status-Production%20Ready-brightgreen?style=flat-square)
+[![Python](https://img.shields.io/badge/Python-3.11-blue?style=flat-square&logo=python)](https://www.python.org/)
+[![TensorFlow](https://img.shields.io/badge/TensorFlow-2.15-orange?style=flat-square&logo=tensorflow)](https://www.tensorflow.org/)
+[![Streamlit](https://img.shields.io/badge/Streamlit-Live%20Demo-red?style=flat-square&logo=streamlit)](https://image-classifier-for-fruits-ufsztygrsajk3tknxhm9mr.streamlit.app/)
+[![License](https://img.shields.io/badge/License-MIT-green?style=flat-square)](LICENSE)
+
+## 🌐 Live Demo
+
+**Try the deployed Streamlit application:**
+
+https://image-classifier-for-fruits-ufsztygrsajk3tknxhm9mr.streamlit.app/
+
+> The deployed application recognizes **Apple, Banana, and Orange**. Images that do not pass the application's confidence and safety checks are rejected instead of being recorded as a supported-fruit prediction.
 
 ## 📋 Table of Contents
 
-- [Overview](#overview)
-- [Features](#features)
-- [Dataset](#dataset)
-- [CNN Architecture](#cnn-architecture)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Project Structure](#project-structure)
-- [Results](#results)
-- [Future Improvements](#future-improvements)
-- [Tech Stack](#tech-stack)
-- [Contributing](#contributing)
-- [License](#license)
-- [Author](#author)
+- [Overview](#-overview)
+- [Key Features](#-key-features)
+- [Supported Classes](#-supported-classes)
+- [Model Architecture](#-model-architecture)
+- [Data Preprocessing](#-data-preprocessing)
+- [Training](#-training)
+- [Evaluation](#-evaluation)
+- [Unsupported Image Handling](#-unsupported-image-handling)
+- [Streamlit Application](#-streamlit-application)
+- [Installation](#-installation)
+- [Usage](#-usage)
+- [Project Structure](#-project-structure)
+- [Results](#-results)
+- [Limitations](#-limitations)
+- [Future Improvements](#-future-improvements)
+- [Tech Stack](#-tech-stack)
+- [References](#-references)
+- [Contributing](#-contributing)
+- [License](#-license)
+- [Author](#-author)
 
 ## 🎯 Overview
 
-This project implements a complete machine learning pipeline for fruit image classification using state-of-the-art deep learning techniques. It includes:
+This project implements a complete image-classification workflow from dataset preparation and transfer-learning model training to evaluation, interactive prediction, and cloud deployment.
 
-- **Data preprocessing** with augmentation
-- **CNN model** with batch normalization and dropout
-- **Training** with callbacks (EarlyStopping, ModelCheckpoint, ReduceLROnPlateau)
-- **Evaluation** with confusion matrix and classification metrics
-- **Web Interface** using Streamlit for easy interaction
-- **Webcam support** for real-time predictions
+The classifier uses a **MobileNetV2 backbone pretrained on ImageNet**. The backbone is frozen during training and a lightweight classification head is added for the three project classes. The application then applies additional inference checks to reduce the chance of confidently accepting unsupported images.
 
-Perfect for:
-- 🎓 College major projects
-- 💼 Machine Learning internship portfolios
-- 📚 Learning deep learning concepts
-- 🏢 Production deployment
+The project is designed as an **AI/ML internship and academic portfolio project**, demonstrating practical skills in deep learning, transfer learning, model evaluation, Streamlit development, and deployment.
 
-## ✨ Features
+## ✨ Key Features
 
-### 1. Advanced CNN Model
-- 4 convolutional blocks with batch normalization
-- MaxPooling for dimensionality reduction
-- Dropout layers to prevent overfitting
-- Fully connected layers with softmax activation
+### 🤖 Deep Learning Classification
+- MobileNetV2 transfer learning with ImageNet weights
+- Frozen pretrained feature extractor for efficient training
+- Global Average Pooling classification head
+- Dense layer with 128 units and ReLU activation
+- Dropout regularization (0.30)
+- Three-class softmax output
 
-### 2. Data Preprocessing
-- Image resizing to 128×128 pixels
-- Normalization of pixel values
-- Data augmentation techniques:
-  - Rotation (±20°)
-  - Zoom (20%)
-  - Horizontal flip
-  - Width and height shift (20%)
-  - Shear transformation (20%)
+### 🖼️ Image Processing
+- RGB image conversion
+- Resize to **128 × 128 pixels**
+- Pixel normalization to the `[0, 1]` range
+- Training augmentation using rotation, zoom, shifts, shear, and horizontal flipping
 
-### 3. Training & Optimization
-- Adam optimizer with learning rate 0.001
-- Categorical crossentropy loss
-- EarlyStopping to prevent overfitting
-- ModelCheckpoint to save best model
-- ReduceLROnPlateau for learning rate scheduling
+### ⚙️ Training Optimization
+- Adam optimizer
+- Learning rate: `0.001`
+- Categorical cross-entropy loss
+- EarlyStopping
+- ModelCheckpoint
+- ReduceLROnPlateau
+- Best model saved as `models/best_model.keras`
 
-### 4. Streamlit Web Application
-- 📤 Image upload interface
-- 🎥 Real-time webcam prediction
-- 📊 Prediction history with CSV export
-- 🎨 Beautiful and intuitive UI
-- 📈 Confidence visualization with progress bars
+### 📊 Evaluation
+- Accuracy
+- Precision
+- Recall
+- F1-score
+- Classification report
+- Confusion matrix
 
-### 5. Command-line Tools
-- `train.py` - Train the model from scratch
-- `evaluate.py` - Comprehensive model evaluation
-- `predict.py` - Single image prediction
+> **Evaluation note:** the current `evaluate.py` evaluates the **validation split**, not a separately held-out test set. Therefore, metrics produced by the script should be described as **validation metrics** unless a separate test dataset is created and evaluated.
 
-## 📊 Dataset
+### 🌐 Streamlit Application
+- Single-image upload
+- Batch image prediction
+- Camera input
+- Prediction confidence visualization
+- Ranked class probabilities
+- Prediction history
+- CSV export
+- Dashboard with prediction statistics and charts
+- Model setup and architecture information
+- Presentation-friendly interface
 
-The project uses the **Fruits-360 dataset** organized as follows:
+## 🍎 Supported Classes
 
-```
-dataset/
-├── train/
-│   ├── Apple/       (Training samples)
-│   ├── Banana/
-│   └── Orange/
-├── validation/
-│   ├── Apple/       (Validation samples)
-│   ├── Banana/
-│   └── Orange/
-└── test/
-    ├── Apple/       (Test samples)
-    ├── Banana/
-    └── Orange/
-```
+The current trained model supports exactly three classes:
 
-### Dataset Statistics
-- **Classes**: 3 (Apple, Banana, Orange)
-- **Image Size**: 128×128 pixels
-- **Total Samples**: ~1,500-2,000 (recommended)
-- **Split**: 70% Training, 15% Validation, 15% Testing
+| Class | Supported |
+|---|---|
+| 🍎 Apple | Yes |
+| 🍌 Banana | Yes |
+| 🍊 Orange | Yes |
 
-**Download Dataset**: [Fruits-360 on Kaggle](https://www.kaggle.com/datasets/moltean/fruits)
+The model is **not trained as a general fruit detector**. An image of another object or unsupported fruit can otherwise be forced into one of the three softmax classes, so the application includes additional rejection checks.
 
-## 🧠 CNN Architecture
+## 🧠 Model Architecture
 
-```
-Input (128×128×3)
-    ↓
-[Conv2D(32) → BatchNorm → Conv2D(32) → BatchNorm → MaxPool → Dropout(0.25)]
-    ↓
-[Conv2D(64) → BatchNorm → Conv2D(64) → BatchNorm → MaxPool → Dropout(0.25)]
-    ↓
-[Conv2D(128) → BatchNorm → Conv2D(128) → BatchNorm → MaxPool → Dropout(0.25)]
-    ↓
-[Conv2D(256) → BatchNorm → Conv2D(256) → BatchNorm → MaxPool → Dropout(0.25)]
-    ↓
-Flatten
-    ↓
-[Dense(512) → BatchNorm → Dropout(0.5)]
-    ↓
-[Dense(256) → BatchNorm → Dropout(0.5)]
-    ↓
-Dense(3, softmax)
-    ↓
-Output (Apple, Banana, Orange)
+The actual training implementation uses **MobileNetV2 transfer learning**, not a custom multi-block CNN.
+
+```text
+Input Image (128 × 128 × 3)
+        ↓
+Pixel values [0, 1]
+        ↓
+MobileNetV2 input scaling [-1, 1]
+        ↓
+MobileNetV2 backbone
+(ImageNet pretrained, frozen)
+        ↓
+Global Average Pooling 2D
+        ↓
+Dense(128, ReLU)
+        ↓
+Dropout(0.30)
+        ↓
+Dense(3, Softmax)
+        ↓
+Apple / Banana / Orange
 ```
 
-### Model Parameters
-- **Total Parameters**: ~2.5M
-- **Trainable Parameters**: ~2.5M
-- **Image Input**: (128, 128, 3)
-- **Output Classes**: 3
+### Model Configuration
 
-## 📦 Installation
+| Component | Configuration |
+|---|---|
+| Backbone | MobileNetV2 |
+| Pretrained weights | ImageNet |
+| Backbone training | Frozen |
+| Input size | 128 × 128 × 3 |
+| Pooling | Global Average Pooling 2D |
+| Classifier layer | Dense(128, ReLU) |
+| Regularization | Dropout(0.30) |
+| Output layer | Dense(3, Softmax) |
+| Optimizer | Adam |
+| Learning rate | 0.001 |
+| Loss | Categorical Cross-Entropy |
+| Batch size | 32 |
+| Maximum epochs | 10 |
 
-### Prerequisites
-- Python 3.11 or higher
-- pip or conda
-- Virtual environment (recommended)
+## 🔄 Data Preprocessing
 
-### Step 1: Clone Repository
-```bash
-git clone https://github.com/HamsiniPutchala/Image-Classifier-for-Fruits.git
-cd Image-Classifier-for-Fruits
-```
+Training images are loaded from class-specific directories and processed using TensorFlow/Keras image generators.
 
-### Step 2: Create Virtual Environment
-```bash
-# Windows
-python -m venv venv
-venv\Scripts\activate
+### Training augmentation
+- Rotation range: ±20°
+- Zoom range: 20%
+- Horizontal flipping
+- Width shift: 20%
+- Height shift: 20%
+- Shear: 20%
+- Nearest-neighbor fill mode
 
-# macOS/Linux
-python3 -m venv venv
-source venv/bin/activate
-```
+Validation images use resizing and normalization without training augmentation.
 
-### Step 3: Install Dependencies
-```bash
-pip install -r requirements.txt
-```
+## 🏋️ Training
 
-### Step 4: Download Dataset
-1. Download Fruits-360 from [Kaggle](https://www.kaggle.com/datasets/moltean/fruits)
-2. Extract and organize in the `dataset/` directory
-
-Or use the script to download programmatically:
-```bash
-# (Add dataset download script if available)
-```
-
-## 🚀 Usage
-
-### 1. Training the Model
+Run:
 
 ```bash
 python train.py
 ```
 
-**Output**:
-- `models/fruit_classifier.keras` - Final trained model
-- `models/best_model.keras` - Best model saved during training
-- `results/training_history.png` - Training visualization
+The training script:
 
-### 2. Evaluate on Test Set
+1. Loads the training and validation datasets.
+2. Builds the MobileNetV2 transfer-learning model.
+3. Freezes the ImageNet pretrained backbone.
+4. Compiles the model using Adam and categorical cross-entropy.
+5. Trains for up to 10 epochs with callbacks.
+6. Saves the best checkpoint to `models/best_model.keras`.
+7. Saves the final trained model to `models/fruit_classifier.keras`.
+8. Saves the class mapping to `models/class_names.json`.
+9. Generates the training-history visualization.
+
+## 📊 Evaluation
+
+Run:
 
 ```bash
 python evaluate.py
 ```
 
-**Output**:
-```
-====================================================================
-EVALUATION METRICS
-====================================================================
-Accuracy:           0.9567
-Precision:          0.9512
-Recall:             0.9534
-F1 Score:           0.9523
-====================================================================
+The script loads `models/best_model.keras` and evaluates it on the repository's **validation directory**.
 
-Confusion Matrix:   (Saved as PNG)
-Classification Report: (Printed to console)
-```
+It generates:
 
-### 3. Predict on Single Image
+- Accuracy
+- Precision
+- Recall
+- F1-score
+- Classification report
+- Confusion matrix
 
-```bash
-python predict.py <image_path>
-```
+The confusion matrix is saved under the `results/` directory.
 
-**Example**:
-```bash
-python predict.py dataset/test/Apple/apple_001.jpg
-```
+### Important metric terminology
 
-**Output**:
-```
-======================================================================
-PREDICTION RESULTS
-======================================================================
+The current project does **not** use a separately held-out test set in `evaluate.py`. Avoid describing these results as **Test Accuracy**. Use **Validation Accuracy** or **Validation Performance** unless a dedicated test split is added later.
 
-Image: dataset/test/Apple/apple_001.jpg
+## 🚫 Unsupported Image Handling
 
-Predicted Class: Apple
-Confidence: 98.76%
+A normal three-class softmax model always selects one of its known classes, even when an image is unrelated to those classes. This project therefore adds an inference-time safety layer in the Streamlit application.
 
-Top-3 Predictions:
-1. Apple            -  98.76%
-2. Orange           -   1.12%
-3. Banana           -   0.12%
+The current rejection logic combines:
 
-All Class Probabilities:
-Apple               [████████████████████████████████████████] 98.76%
-Orange              [█░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  1.12%
-Banana              [░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░]  0.12%
+- **Confidence threshold:** prediction confidence must reach at least 92%.
+- **Prediction margin:** the top class must sufficiently exceed the second-best class.
+- **Multi-view agreement:** the prediction is checked across the original, mirrored, and center-cropped views.
+- **Visual compatibility checks:** simple color-profile checks help reject obviously incompatible inputs.
 
-======================================================================
-```
+When an image fails these checks, the application displays:
 
-### 4. Launch Web Application
+> 🚫 No supported fruit exists in this image.
+
+The rejected image is not added to prediction history.
+
+### Important limitation
+
+These checks improve practical rejection behavior, but they do not provide mathematically guaranteed open-set recognition. A closed-set classifier can still misclassify some visually similar unsupported images. A dedicated out-of-distribution detector or a separately trained reject/unknown model would be a stronger future enhancement.
+
+## 🌐 Streamlit Application
+
+Start the application locally with:
 
 ```bash
 streamlit run app.py
 ```
 
-**Features**:
-- 📤 Upload images for prediction
-- 🎥 Real-time webcam prediction
-- 📊 View prediction history
-- 💾 Export history as CSV
+Then open:
 
-**Access**: Open `http://localhost:8501` in your browser
+```text
+http://localhost:8501
+```
+
+### Application sections
+
+- **Home** — project overview and model readiness
+- **Classifier** — upload and classify images
+- **Camera** — capture an image using the camera input
+- **Dashboard** — prediction statistics, charts, history, and CSV export
+- **Model Setup** — model configuration and inference pipeline
+- **About** — project and technology information
+
+## 📦 Installation
+
+### Prerequisites
+
+- Python 3.11
+- pip
+- Git
+- A virtual environment is recommended
+
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/HamsiniPutchala/Image-Classifier-for-Fruits.git
+cd Image-Classifier-for-Fruits
+```
+
+### 2. Create and activate a virtual environment
+
+**Windows:**
+
+```bash
+python -m venv venv
+venv\Scripts\activate
+```
+
+**macOS/Linux:**
+
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+The deployment requirements currently use TensorFlow CPU 2.15.0, NumPy 1.26.4, Pandas 2.2.3, Pillow 10.4.0, and Streamlit 1.50.0.
+
+## 🚀 Usage
+
+### Train the model
+
+```bash
+python train.py
+```
+
+### Evaluate the model
+
+```bash
+python evaluate.py
+```
+
+### Run command-line prediction
+
+```bash
+python predict.py <image_path>
+```
+
+### Run the web application
+
+```bash
+streamlit run app.py
+```
+
+For the easiest experience, use the live Streamlit deployment listed at the top of this README.
 
 ## 📁 Project Structure
 
-```
+```text
 Image-Classifier-for-Fruits/
 │
-├── dataset/                      # Dataset directory (organized by class)
-│   ├── train/                    # Training images (70%)
+├── dataset/
+│   ├── train/
 │   │   ├── Apple/
 │   │   ├── Banana/
 │   │   └── Orange/
-│   ├── validation/               # Validation images (15%)
-│   │   ├── Apple/
-│   │   ├── Banana/
-│   │   └── Orange/
-│   └── test/                     # Test images (15%)
+│   └── validation/
 │       ├── Apple/
 │       ├── Banana/
 │       └── Orange/
 │
-├── models/                       # Saved models
-│   ├── fruit_classifier.keras    # Final trained model
-│   └── best_model.keras          # Best checkpoint during training
+├── models/
+│   ├── best_model.keras
+│   ├── fruit_classifier.keras
+│   └── class_names.json
 │
-├── notebooks/                    # Jupyter notebooks (optional)
-│   └── exploration.ipynb
+├── results/
+│   ├── training_history.png
+│   └── confusion_matrix.png
 │
-├── results/                      # Training results and plots
-│   ├── training_history.png      # Training/validation curves
-│   ├── accuracy.png              # Accuracy plot
-│   ├── loss.png                  # Loss plot
-│   └── confusion_matrix.png      # Confusion matrix heatmap
-│
-├── uploads/                      # Uploaded images from web app
-│   └── prediction_history.csv    # Prediction records
-│
-├── utils/                        # Utility modules
+├── utils/
 │   ├── __init__.py
-│   ├── preprocessing.py          # Image loading and preprocessing
-│   ├── plotting.py               # Visualization functions
-│   ├── metrics.py                # Evaluation metrics
-│   └── helper.py                 # Helper utilities
+│   ├── preprocessing.py
+│   ├── plotting.py
+│   ├── metrics.py
+│   └── helper.py
 │
-├── train.py                      # Training script
-├── evaluate.py                   # Evaluation script
-├── predict.py                    # Single image prediction
-├── app.py                        # Streamlit web application
-│
-├── requirements.txt              # Python dependencies
-├── setup.py                      # Package setup file
-├── README.md                     # Project documentation
-├── LICENSE                       # MIT License
-└── .gitignore                    # Git ignore file
+├── train.py
+├── evaluate.py
+├── predict.py
+├── app.py
+├── requirements.txt
+├── runtime.txt
+├── setup.py
+├── README.md
+├── LICENSE
+└── .gitignore
 ```
 
 ## 📈 Results
 
-### Model Performance
+The repository includes the trained model and evaluation pipeline. Run `python evaluate.py` to generate the current validation metrics and confusion matrix from the bundled model and validation dataset.
 
-| Metric | Value |
-|--------|-------|
-| **Test Accuracy** | 95.67% |
-| **Precision** | 95.12% |
-| **Recall** | 95.34% |
-| **F1 Score** | 95.23% |
+Because the evaluation script uses the validation split, this README intentionally does not label those measurements as test-set performance.
 
-### Per-Class Performance
+For an internship or academic report, report the exact metrics produced by the current run and identify the evaluated split clearly.
 
-| Class | Precision | Recall | F1-Score |
-|-------|-----------|--------|----------|
-| Apple | 96.23% | 94.51% | 95.36% |
-| Banana | 94.82% | 96.08% | 95.44% |
-| Orange | 94.32% | 95.25% | 94.78% |
+## ⚠️ Limitations
 
-### Training Metrics
+- The model currently recognizes only Apple, Banana, and Orange.
+- The classifier is a closed-set softmax model, so unsupported-image rejection is implemented as an additional inference safety layer rather than a true unknown-class detector.
+- The current evaluation pipeline uses a validation split rather than a dedicated held-out test set.
+- The visual compatibility checks are heuristic and should not be treated as a replacement for a dedicated out-of-distribution detection method.
+- Real-world performance can vary with lighting, background, image quality, camera angle, occlusion, and fruit appearance.
 
-- **Training Time**: ~30-40 minutes (GPU)
-- **Epochs**: 35-40 (with early stopping)
-- **Best Validation Accuracy**: 96.15%
-- **Final Training Loss**: 0.0234
+## 🔮 Future Improvements
 
-## 🚀 Future Improvements
+### Model and robustness
+- Fine-tune selected MobileNetV2 layers after the initial transfer-learning stage.
+- Compare the current model with other lightweight transfer-learning architectures.
+- Add Grad-CAM or another explainability method.
+- Improve robustness to lighting, background, occlusion, and image-quality variations.
+- Add a dedicated out-of-distribution detection or rejection model.
 
-### Model Enhancement
-- [ ] Experiment with ResNet, MobileNet, or EfficientNet transfer learning
-- [ ] Implement ensemble methods combining multiple models
-- [ ] Add more fruit classes (Mango, Grape, Strawberry, etc.)
-- [ ] Use class weights to handle imbalanced datasets
-
-### Features
-- [ ] Add explainability using GradCAM
-- [ ] Implement model quantization for mobile deployment
-- [ ] Create mobile app (Flutter/React Native)
-- [ ] Add batch prediction functionality
-- [ ] Implement active learning for continuous improvement
+### Evaluation
+- Create a genuinely held-out test dataset.
+- Add cross-validation or repeated evaluation where appropriate.
+- Track per-class confusion and confidence calibration.
+- Add automated regression tests for inference behavior.
 
 ### Deployment
-- [ ] Deploy on AWS/GCP/Azure
-- [ ] Create Docker container for easy deployment
-- [ ] Build REST API with FastAPI
-- [ ] Edge deployment on Raspberry Pi
-
-### Data
-- [ ] Augment dataset with more diverse samples
-- [ ] Add rotated and partially visible fruit images
-- [ ] Include different lighting conditions
-- [ ] Add damaged/bruised fruit samples
+- Add a REST API for programmatic inference.
+- Containerize the application with Docker.
+- Optimize the model for lower-latency or edge deployment.
+- Add monitoring for prediction confidence and rejected inputs.
 
 ## 🛠️ Tech Stack
 
-### Core Libraries
-- **TensorFlow/Keras** - Deep learning framework
-- **NumPy** - Numerical computations
-- **Pandas** - Data handling and analysis
-- **Matplotlib** - Data visualization
-- **Scikit-learn** - Machine learning metrics
+### AI / Machine Learning
+- **Python 3.11**
+- **TensorFlow / Keras**
+- **MobileNetV2**
+- **NumPy**
+- **Scikit-learn**
 
-### Web & Frontend
-- **Streamlit** - Web application framework
-- **OpenCV** - Computer vision and webcam support
-- **Pillow** - Image processing
+### Web Application
+- **Streamlit**
+- **Pillow**
+- **Pandas**
 
-### Development Tools
-- **Python 3.11+** - Programming language
-- **Git/GitHub** - Version control
-- **pip** - Package management
+### Development
+- **Git / GitHub**
+- **VS Code**
+- **pip**
 
 ## 📚 References
 
 - [TensorFlow Documentation](https://www.tensorflow.org/guide)
-- [Keras CNN Guide](https://keras.io/guides/convolutional_neural_networks/)
-- [Fruits-360 Dataset](https://www.kaggle.com/datasets/moltean/fruits)
+- [Keras MobileNetV2 Documentation](https://keras.io/api/applications/mobilenet/)
 - [Streamlit Documentation](https://docs.streamlit.io/)
-- [OpenCV Documentation](https://docs.opencv.org/)
+- [Fruits-360 Dataset](https://www.kaggle.com/datasets/moltean/fruits)
+- [Scikit-learn Documentation](https://scikit-learn.org/stable/)
 
 ## 🤝 Contributing
 
-Contributions are welcome! Here's how you can help:
+Contributions are welcome.
 
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes (`git commit -m 'Add amazing feature'`)
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
+1. Fork the repository.
+2. Create a feature branch.
+3. Make and test your changes.
+4. Commit your changes with a meaningful message.
+5. Push the branch and open a Pull Request.
 
 ## 📝 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-### MIT License Summary
-- ✅ Use for commercial purposes
-- ✅ Modify the code
-- ✅ Distribute the software
-- ✅ Use privately
-- ⚠️ Include license and copyright notice
+This project is licensed under the MIT License. See [LICENSE](LICENSE) for details.
 
 ## 👨‍💻 Author
 
 **Hamsini Putchala**
 
-- GitHub: [@HamsiniPutchala](https://github.com/HamsiniPutchala)
-
+- GitHub: https://github.com/HamsiniPutchala
