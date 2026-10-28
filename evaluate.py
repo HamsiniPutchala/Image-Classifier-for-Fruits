@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-from typing import Tuple
 
 import numpy as np
 import tensorflow as tf
@@ -12,7 +11,6 @@ from utils import (
     load_dataset,
     calculate_metrics,
     print_metrics,
-    get_predictions_from_probabilities,
     plot_confusion_matrix,
     print_classification_report,
 )
@@ -29,7 +27,7 @@ RESULTS_PATH = 'results'
 BATCH_SIZE = 32
 
 
-def load_class_names() -> list[str]:
+def load_class_names():
     metadata_path = os.path.join(MODELS_PATH, 'class_names.json')
     if os.path.exists(metadata_path):
         with open(metadata_path, 'r', encoding='utf-8') as file:
@@ -46,62 +44,51 @@ def load_class_names() -> list[str]:
     )
 
 
-def load_trained_model(model_path: str) -> tf.keras.Model:
+def load_trained_model(model_path):
     if not os.path.exists(model_path):
         raise FileNotFoundError(f'Model not found at {model_path}')
     return tf.keras.models.load_model(model_path, compile=False)
 
 
-def get_predictions(
-    model: tf.keras.Model,
-    validation_dataset,
-) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
-    """Run exactly one complete pass over the finite validation iterator."""
-    true_labels = []
-    predicted_labels = []
-    probabilities = []
+def get_predictions(model, validation_dataset):
+    """Evaluate exactly one complete pass without relying on Tensor .numpy()."""
+    validation_dataset.reset()
 
-    # DirectoryIterator.__iter__ is intentionally endless. Use len() so
-    # evaluation processes every validation batch exactly once and terminates.
-    num_batches = len(validation_dataset)
-    for batch_index in range(num_batches):
-        images, labels = validation_dataset[batch_index]
-        probs = model.predict(images, verbose=0)
-        probabilities.extend(np.asarray(probs))
-        preds, _ = get_predictions_from_probabilities(np.asarray(probs))
-        predicted_labels.extend(preds)
+    probabilities = np.asarray(model.predict(validation_dataset, verbose=0))
+    true_labels = np.asarray(validation_dataset.classes, dtype=np.int64)
 
-        # Keras DirectoryIterator may return labels as either a NumPy array
-        # or a Tensor. Support both TensorFlow/Keras representations.
-        if hasattr(labels, 'numpy'):
-            labels_array = labels.numpy()
-        else:
-            labels_array = np.asarray(labels)
+    if probabilities.ndim != 2:
+        raise RuntimeError(
+            f'Unexpected model output shape: {probabilities.shape}. Expected 2-D probabilities.'
+        )
 
-        true_labels.extend(np.argmax(labels_array, axis=1))
+    if len(true_labels) != len(probabilities):
+        raise RuntimeError(
+            f'Validation size mismatch: {len(true_labels)} labels vs '
+            f'{len(probabilities)} predictions.'
+        )
 
-    if not true_labels:
-        raise ValueError('Validation dataset is empty; cannot evaluate the model.')
+    predicted_labels = np.argmax(probabilities, axis=1).astype(np.int64)
 
-    return (
-        np.asarray(true_labels, dtype=np.int64),
-        np.asarray(predicted_labels, dtype=np.int64),
-        np.asarray(probabilities, dtype=np.float32),
-    )
+    return true_labels, predicted_labels, probabilities
 
 
-def main() -> None:
+def main():
     os.makedirs(RESULTS_PATH, exist_ok=True)
+
     class_names = load_class_names()
+    if len(class_names) != 3:
+        raise RuntimeError(f'Expected 3 fruit classes, found {len(class_names)}: {class_names}')
+
     validation_dataset = load_dataset(
         DATASET_PATH,
         subset='validation',
         batch_size=BATCH_SIZE,
     )
-    validation_dataset.reset()
     model = load_trained_model(os.path.join(MODELS_PATH, 'best_model.keras'))
 
     true_labels, predicted_labels, _ = get_predictions(model, validation_dataset)
+
     metrics = calculate_metrics(true_labels, predicted_labels)
     print_metrics(metrics)
     print_classification_report(true_labels, predicted_labels, class_names)
