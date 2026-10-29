@@ -1,9 +1,4 @@
-"""Prepare a balanced 10-class fruit dataset from Fruits-360.
-
-The project combines matching varieties into these ten fruit classes:
-Apple, Banana, Blackberry, Grape, Kiwi, Mango, Orange, Pineapple, Strawberry,
-and Watermelon.
-"""
+"""Prepare a balanced 10-class fruit dataset from Fruits-360."""
 from __future__ import annotations
 
 import random
@@ -20,12 +15,6 @@ CLASSES = [
     "Apple", "Banana", "Blackberry", "Grape", "Kiwi",
     "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon",
 ]
-# Fruits-360 versions can have small per-class count differences.
-# 450 is safely below the known Watermelon source count and keeps the
-# generated dataset balanced without failing because one class has fewer
-# than 500 source training images.
-TRAIN_PER_CLASS = 450
-VAL_PER_CLASS = 100
 SEED = 42
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
 
@@ -48,10 +37,7 @@ def find_split_root(root: Path, split_names: set[str]) -> Path:
     if not candidates:
         raise FileNotFoundError(f"Could not find a split folder under {root}")
     candidates.sort(
-        key=lambda p: sum(
-            1 for f in p.rglob("*")
-            if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
-        ),
+        key=lambda p: sum(1 for f in p.rglob("*") if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS),
         reverse=True,
     )
     return candidates[0]
@@ -70,17 +56,14 @@ def find_class_folders(split_root: Path, class_name: str) -> list[Path]:
 def image_files(folders: list[Path]) -> list[Path]:
     images: list[Path] = []
     for folder in folders:
-        images.extend(
-            p for p in folder.rglob("*")
-            if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS
-        )
+        images.extend(p for p in folder.rglob("*") if p.is_file() and p.suffix.lower() in IMAGE_EXTENSIONS)
     return sorted(set(images), key=lambda p: str(p).lower())
 
 
 def copy_images(images: list[Path], destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     for index, image in enumerate(images, start=1):
-        shutil.copy2(image, destination / f"{index:04d}_{image.stem}{image.suffix.lower()}")
+        shutil.copy2(image, destination / f"{index:05d}_{image.stem}{image.suffix.lower()}")
 
 
 def main() -> None:
@@ -93,30 +76,30 @@ def main() -> None:
     if DATASET_ROOT.exists():
         shutil.rmtree(DATASET_ROOT)
 
+    train_counts = []
+    val_counts = []
     for class_name in CLASSES:
         train_images = image_files(find_class_folders(source_train, class_name))
         test_images = image_files(find_class_folders(source_test, class_name))
-        print(f"{class_name}: discovered {len(train_images)} training and {len(test_images)} test images")
+        print(f"{class_name}: discovered {len(train_images)} training and {len(test_images)} validation images")
+        if not train_images or not test_images:
+            raise RuntimeError(f"{class_name}: source images were not found.")
 
-        if len(train_images) < TRAIN_PER_CLASS:
-            raise RuntimeError(
-                f"{class_name}: only {len(train_images)} source training images found; "
-                f"need {TRAIN_PER_CLASS}."
-            )
-        if len(test_images) < VAL_PER_CLASS:
-            raise RuntimeError(
-                f"{class_name}: only {len(test_images)} source test images found; "
-                f"need {VAL_PER_CLASS}."
-            )
-
+        # Use the complete available source split. This avoids throwing away
+        # fruit-specific visual variation and is especially important for
+        # visually similar classes such as Kiwi/Apple and Blackberry/Grape.
         rng.shuffle(train_images)
         rng.shuffle(test_images)
-        copy_images(train_images[:TRAIN_PER_CLASS], TRAIN_ROOT / class_name)
-        copy_images(test_images[:VAL_PER_CLASS], VAL_ROOT / class_name)
+        copy_images(train_images, TRAIN_ROOT / class_name)
+        copy_images(test_images, VAL_ROOT / class_name)
+        train_counts.append(len(train_images))
+        val_counts.append(len(test_images))
 
     print("\n10-class dataset preparation complete.")
     print("Classes: " + ", ".join(CLASSES))
-    print(f"Images: {TRAIN_PER_CLASS * len(CLASSES)} training + {VAL_PER_CLASS * len(CLASSES)} validation")
+    print(f"Training images: {sum(train_counts)}")
+    print(f"Validation images: {sum(val_counts)}")
+    print(f"Smallest class: {min(train_counts)} training / {min(val_counts)} validation")
 
 
 if __name__ == "__main__":
