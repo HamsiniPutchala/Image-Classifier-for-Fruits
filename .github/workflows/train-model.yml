@@ -126,8 +126,18 @@ jobs:
             results/*
           if-no-files-found: error
 
+      - name: Publish trained model to repository
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add models/best_model.keras models/fruit_classifier.keras models/class_names.json
+          if git diff --cached --quiet; then
+            echo "No model changes to publish."
+          else
+            git commit -m "Publish trained fruit classifier model"
+            git push origin HEAD:main
+          fi
+
       - name: Finalize successful training
         run: |
-          echo "Training, model verification, evaluation, and artifact upload completed successfully."
-          echo "The trained 10-class model is available in the GitHub Actions artifact: fruit-classifier-model"
-          echo "Workflow publish step removed to prevent the previous repository-publish failure."
+          echo "Training, verification, evaluation, artifact upload, and model publication completed successfully."
