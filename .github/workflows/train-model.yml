@@ -41,6 +41,32 @@ jobs:
           python --version
           python -c "import tensorflow, numpy, pandas, matplotlib, seaborn, sklearn, PIL, kagglehub; print('All training dependencies imported successfully')"
 
+      - name: Synchronize app metadata for Blackberry
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          path = Path('app.py')
+          text = path.read_text(encoding='utf-8')
+          text = text.replace(
+              '"Apple", "Banana", "Grape", "Kiwi", "Lemon",\n    "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon",',
+              '"Apple", "Banana", "Blackberry", "Grape", "Kiwi",\n    "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon",',
+          )
+          text = text.replace(
+              '"Apple", "Banana", "Lemon", "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon"',
+              '"Apple", "Banana", "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon"',
+          )
+          text = text.replace(
+              'predicted_class in {"Banana", "Lemon"}',
+              'predicted_class == "Banana"',
+          )
+          path.write_text(text, encoding='utf-8')
+          PY
+          grep -n "Blackberry" app.py
+          if grep -n "Lemon" app.py; then
+            echo "Unexpected Lemon reference remains in app.py"
+            exit 1
+          fi
+
       - name: Prepare and verify 10-class dataset
         run: |
           python scripts/prepare_dataset.py
@@ -99,12 +125,12 @@ jobs:
             results/*
           if-no-files-found: error
 
-      - name: Publish trained model and metadata
+      - name: Publish trained model, app and metadata
         run: |
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add scripts/prepare_dataset.py models/best_model.keras models/fruit_classifier.keras models/class_names.json results
+          git add app.py scripts/prepare_dataset.py models/best_model.keras models/fruit_classifier.keras models/class_names.json results
           if git diff --cached --quiet; then
             echo "No generated changes to publish."
             exit 0
