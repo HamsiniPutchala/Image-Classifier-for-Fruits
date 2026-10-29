@@ -41,9 +41,9 @@ jobs:
           python --version
           python -c "import tensorflow, numpy, pandas, matplotlib, seaborn, sklearn, PIL, kagglehub; print('All training dependencies imported successfully')"
 
-      - name: Replace Lemon references with Lime
+      - name: Replace Lime references with Blackberry
         run: |
-          sed -i 's/Lemon/Lime/g' app.py README.md models/README.md
+          sed -i 's/Lime/Blackberry/g' scripts/prepare_dataset.py app.py README.md models/README.md
 
       - name: Download and prepare Fruits-360 dataset
         run: python scripts/prepare_dataset.py
@@ -53,7 +53,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           classes = [
-              'Apple', 'Banana', 'Grape', 'Kiwi', 'Lime',
+              'Apple', 'Banana', 'Blackberry', 'Grape', 'Kiwi',
               'Mango', 'Orange', 'Pineapple', 'Strawberry', 'Watermelon'
           ]
           for split in ['train', 'validation']:
@@ -78,7 +78,7 @@ jobs:
           import json
           from pathlib import Path
           expected = [
-              'Apple', 'Banana', 'Grape', 'Kiwi', 'Lime',
+              'Apple', 'Banana', 'Blackberry', 'Grape', 'Kiwi',
               'Mango', 'Orange', 'Pineapple', 'Strawberry', 'Watermelon'
           ]
           with open('models/class_names.json', encoding='utf-8') as f:
@@ -104,18 +104,18 @@ jobs:
             results/*
           if-no-files-found: error
 
-      - name: Publish model, metadata and Lime documentation
+      - name: Publish model, metadata and Blackberry documentation
         run: |
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add app.py README.md models/README.md models/best_model.keras models/class_names.json
+          git add scripts/prepare_dataset.py app.py README.md models/README.md models/best_model.keras models/class_names.json
           if git diff --cached --quiet; then
             echo "No changes to publish."
             exit 0
           fi
-          git commit -m "Replace Lemon with Lime in 10-class classifier"
+          git commit -m "Replace Lime with Blackberry in 10-class classifier"
 
           git fetch origin main
           git rebase origin/main
