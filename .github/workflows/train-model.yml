@@ -106,11 +106,11 @@ jobs:
           with open('models/class_names.json', encoding='utf-8') as f:
               classes = json.load(f)
           assert classes == expected, classes
-          model_size_mb = Path('models/best_model.keras').stat().st_size / (1024 * 1024)
-          print(f'Classes: {classes}')
-          print(f'Best model size: {model_size_mb:.2f} MB')
-          if model_size_mb >= 95:
-              raise SystemExit('best_model.keras is too large for normal GitHub repository storage')
+          for model_name in ['best_model.keras', 'fruit_classifier.keras']:
+              size_mb = Path('models', model_name).stat().st_size / (1024 * 1024)
+              print(f'{model_name}: {size_mb:.2f} MB')
+              if size_mb >= 95:
+                  raise SystemExit(f'{model_name} is too large for normal GitHub repository storage')
           PY
 
       - name: Evaluate model
@@ -126,17 +126,7 @@ jobs:
             results/*
           if-no-files-found: error
 
-      - name: Publish trained model, app and metadata
+      - name: Finalize successful training
         run: |
-          set -e
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add app.py scripts/prepare_dataset.py models/best_model.keras models/fruit_classifier.keras models/class_names.json results
-          if git diff --cached --quiet; then
-            echo "No generated changes to publish."
-            exit 0
-          fi
-          git commit -m "Train 10-class fruit classifier"
-          git fetch origin main
-          git rebase origin/main
-          git push origin HEAD:main
+          echo "Training, model verification, evaluation, and artifact upload completed successfully."
+          echo "The trained 10-class model is available in the GitHub Actions artifact: fruit-classifier-model"
