@@ -1,16 +1,8 @@
 """Prepare a balanced 10-class fruit dataset from Fruits-360.
 
-The Fruits-360 release has changed its internal folder layout across versions.
-This script discovers fruit folders recursively and matches class names
-flexibly, including common variety names such as Apple Red, Banana Red,
-Mango Green, and Pineapple Mini.
-
 The project combines matching varieties into these ten fruit classes:
-Apple, Banana, Grape, Kiwi, Lemon, Mango, Orange, Pineapple, Strawberry,
+Apple, Banana, Grape, Kiwi, Lime, Mango, Orange, Pineapple, Strawberry,
 and Watermelon.
-
-Source Training images are used for project training and source Test images
-for validation, preventing train/validation leakage.
 """
 from __future__ import annotations
 
@@ -25,16 +17,8 @@ DATASET_ROOT = ROOT / "dataset"
 TRAIN_ROOT = DATASET_ROOT / "train"
 VAL_ROOT = DATASET_ROOT / "validation"
 CLASSES = [
-    "Apple",
-    "Banana",
-    "Grape",
-    "Kiwi",
-    "Lemon",
-    "Mango",
-    "Orange",
-    "Pineapple",
-    "Strawberry",
-    "Watermelon",
+    "Apple", "Banana", "Grape", "Kiwi", "Lime",
+    "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon",
 ]
 TRAIN_PER_CLASS = 500
 VAL_PER_CLASS = 100
@@ -47,7 +31,6 @@ def normalize_name(name: str) -> str:
 
 
 def class_matches(folder_name: str, class_name: str) -> bool:
-    """Match a fruit and common variety naming variants."""
     name = normalize_name(folder_name)
     target = normalize_name(class_name)
     return name == target or name.startswith(target)
@@ -71,16 +54,11 @@ def find_split_root(root: Path, split_names: set[str]) -> Path:
 
 
 def find_class_folders(split_root: Path, class_name: str) -> list[Path]:
-    """Find source folders for a class, including variety folders."""
     matches: list[Path] = []
     for folder in split_root.rglob("*"):
         if not folder.is_dir() or not class_matches(folder.name, class_name):
             continue
-        images = [
-            f for f in folder.iterdir()
-            if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
-        ]
-        if images:
+        if any(f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS for f in folder.iterdir()):
             matches.append(folder)
     return sorted(set(matches), key=lambda p: str(p).lower())
 
@@ -98,67 +76,37 @@ def image_files(folders: list[Path]) -> list[Path]:
 def copy_images(images: list[Path], destination: Path) -> None:
     destination.mkdir(parents=True, exist_ok=True)
     for index, image in enumerate(images, start=1):
-        destination_name = f"{index:04d}_{image.stem}{image.suffix.lower()}"
-        shutil.copy2(image, destination / destination_name)
+        shutil.copy2(image, destination / f"{index:04d}_{image.stem}{image.suffix.lower()}")
 
 
 def main() -> None:
     print("Downloading Fruits-360 through KaggleHub...")
     downloaded = Path(kagglehub.dataset_download("moltean/fruits"))
-    print(f"Dataset cache: {downloaded}")
-
     source_train = find_split_root(downloaded, {"training", "train"})
     source_test = find_split_root(downloaded, {"test", "testing"})
-    print(f"Source training split: {source_train}")
-    print(f"Source test split:     {source_test}")
 
     rng = random.Random(SEED)
     if DATASET_ROOT.exists():
         shutil.rmtree(DATASET_ROOT)
 
     for class_name in CLASSES:
-        train_folders = find_class_folders(source_train, class_name)
-        test_folders = find_class_folders(source_test, class_name)
-        train_images = image_files(train_folders)
-        test_images = image_files(test_folders)
-
-        print(
-            f"{class_name}: discovered {len(train_images)} training and "
-            f"{len(test_images)} test images"
-        )
+        train_images = image_files(find_class_folders(source_train, class_name))
+        test_images = image_files(find_class_folders(source_test, class_name))
+        print(f"{class_name}: discovered {len(train_images)} training and {len(test_images)} test images")
 
         if len(train_images) < TRAIN_PER_CLASS:
-            raise RuntimeError(
-                f"{class_name}: only {len(train_images)} source training images found; "
-                f"need {TRAIN_PER_CLASS}. Dataset layout may have changed."
-            )
+            raise RuntimeError(f"{class_name}: only {len(train_images)} source training images found; need {TRAIN_PER_CLASS}.")
         if len(test_images) < VAL_PER_CLASS:
-            raise RuntimeError(
-                f"{class_name}: only {len(test_images)} source test images found; "
-                f"need {VAL_PER_CLASS}. Dataset layout may have changed."
-            )
+            raise RuntimeError(f"{class_name}: only {len(test_images)} source test images found; need {VAL_PER_CLASS}.")
 
         rng.shuffle(train_images)
         rng.shuffle(test_images)
-        selected_train = train_images[:TRAIN_PER_CLASS]
-        selected_val = test_images[:VAL_PER_CLASS]
-
-        copy_images(selected_train, TRAIN_ROOT / class_name)
-        copy_images(selected_val, VAL_ROOT / class_name)
-
-        print(
-            f"{class_name}: train={len(selected_train)}, "
-            f"validation={len(selected_val)}, varieties={len(train_folders)}"
-        )
+        copy_images(train_images[:TRAIN_PER_CLASS], TRAIN_ROOT / class_name)
+        copy_images(test_images[:VAL_PER_CLASS], VAL_ROOT / class_name)
 
     print("\n10-class dataset preparation complete.")
-    print(f"Created: {DATASET_ROOT}")
     print("Classes: " + ", ".join(CLASSES))
-    print(
-        f"Images: {TRAIN_PER_CLASS * len(CLASSES)} training + "
-        f"{VAL_PER_CLASS * len(CLASSES)} validation"
-    )
-    print("Next step: python train.py")
+    print(f"Images: {TRAIN_PER_CLASS * len(CLASSES)} training + {VAL_PER_CLASS * len(CLASSES)} validation")
 
 
 if __name__ == "__main__":
