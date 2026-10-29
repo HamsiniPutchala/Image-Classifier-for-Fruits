@@ -1,5 +1,3 @@
-[
-  "Apple",
-  "Banana",
-  "Orange"
-]
+{
+  "content": "[\n  \"Apple\",\n  \"Banana\",\n  \"Blackberry\",\n  \"Grape\",\n  \"Kiwi\",\n  \"Mango\",\n  \"Orange\",\n  \"Pineapple\",\n  \"Strawberry\",\n  \"Watermelon\"\n]"
+}
