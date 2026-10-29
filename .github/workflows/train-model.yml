@@ -59,6 +59,7 @@ jobs:
               'predicted_class in {"Banana", "Lemon"}',
               'predicted_class == "Banana"',
           )
+          text = text.replace('"Lemon": "🍋"', '"Blackberry": "🫐"')
           path.write_text(text, encoding='utf-8')
           PY
           grep -n "Blackberry" app.py
