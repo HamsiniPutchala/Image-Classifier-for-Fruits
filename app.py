@@ -17,9 +17,9 @@ MODEL_CANDIDATES = [BASE_DIR / "models" / "best_model.keras", BASE_DIR / "models
 CLASS_NAMES_PATH = BASE_DIR / "models" / "class_names.json"
 OOD_PATH = BASE_DIR / "models" / "ood_calibration.npz"
 DEFAULT_CLASSES = ["Apple", "Banana", "Blackberry", "Grape", "Kiwi", "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon"]
-IMAGE_SIZE = (128, 128)
-ACCEPTANCE_THRESHOLD = 0.65
-MIN_MARGIN = 0.10
+IMAGE_SIZE = (160, 160)
+ACCEPTANCE_THRESHOLD = 0.55
+MIN_MARGIN = 0.08
 MIN_VIEW_AGREEMENT = 2 / 3
 
 st.set_page_config(page_title="Fruit Image Classifier", page_icon="🍎", layout="wide")
@@ -41,12 +41,15 @@ def load_model(path: str) -> tf.keras.Model:
 
 
 @st.cache_resource(show_spinner="Loading unknown-image detector...")
-def load_ood(path: str) -> tuple[np.ndarray, float] | None:
+def load_ood(path: str) -> tuple[np.ndarray, np.ndarray | None, float] | None:
     file = Path(path)
     if not file.exists():
         return None
     data = np.load(file)
-    return np.asarray(data["centroids"], dtype=np.float32), float(data["distance_threshold"])
+    centroids = np.asarray(data["centroids"], dtype=np.float32)
+    thresholds = np.asarray(data["distance_thresholds"], dtype=np.float32) if "distance_thresholds" in data else None
+    global_threshold = float(data["distance_threshold"])
+    return centroids, thresholds, global_threshold
 
 
 def find_model() -> Path | None:
@@ -118,29 +121,31 @@ def predict(model: tf.keras.Model, image: Image.Image, classes: list[str]) -> di
 
     ood = load_ood(str(OOD_PATH))
     ood_distance = None
+    ood_threshold = None
     ood_pass = True
+    nearest_classes = []
     if ood is not None:
-        centroids, threshold = ood
+        centroids, thresholds, global_threshold = ood
         embedding_model = get_embedding_model(model)
         embeddings = np.asarray(embedding_model.predict(np.stack(views), verbose=0), dtype=np.float32)
-        nearest = []
         distances = []
         for emb in embeddings:
             idx, dist = nearest_centroid_distance(emb, centroids)
-            nearest.append(idx)
+            nearest_classes.append(idx)
             distances.append(dist)
         ood_distance = float(np.mean(distances))
-        ood_pass = ood_distance <= threshold and sum(x == best for x in nearest) >= 2
+        if thresholds is not None and len(thresholds) == len(classes):
+            ood_threshold = float(thresholds[best])
+        else:
+            ood_threshold = global_threshold
+        nearest_agreement = sum(x == best for x in nearest_classes) >= 2
+        ood_pass = ood_distance <= ood_threshold and nearest_agreement
 
     supported = confidence >= ACCEPTANCE_THRESHOLD and margin >= MIN_MARGIN and agreement >= MIN_VIEW_AGREEMENT and ood_pass
     return {
-        "class": classes[best],
-        "confidence": confidence,
-        "margin": margin,
-        "agreement": agreement,
-        "ood_distance": ood_distance,
-        "supported": supported,
-        "top": [(classes[int(i)], float(probs[int(i)])) for i in order[:5]],
+        "class": classes[best], "confidence": confidence, "margin": margin,
+        "agreement": agreement, "ood_distance": ood_distance, "ood_threshold": ood_threshold,
+        "supported": supported, "top": [(classes[int(i)], float(probs[int(i)])) for i in order[:5]],
     }
 
 
@@ -167,7 +172,7 @@ def show_result(result: dict[str, Any], iq: dict[str, Any]) -> None:
     if iq["warnings"]:
         st.warning(" • ".join(iq["warnings"]))
     if result["ood_distance"] is not None:
-        st.caption(f"Feature-space unknown-image check: distance {result['ood_distance']:.3f} (calibrated from validation fruit images).")
+        st.caption(f"Feature-space unknown-image check: distance {result['ood_distance']:.3f} / class threshold {result['ood_threshold']:.3f}.")
 
 
 def dashboard_page(classes: list[str]) -> None:
@@ -229,7 +234,7 @@ def model_setup_page(classes: list[str], bundled: Path | None) -> None:
                     st.error(f"Could not load model: {exc}")
     with tab2:
         a, b = st.columns(2)
-        a.metric("Input resolution", "128 × 128"); b.metric("Output classes", len(classes))
+        a.metric("Input resolution", "160 × 160"); b.metric("Output classes", len(classes))
         st.write("**Architecture:** MobileNetV2 transfer learning + fine-tuning")
         st.write("**Framework:** TensorFlow / Keras")
         st.write("**Prediction views:** Original + mirrored + center crop")
@@ -252,89 +257,56 @@ def about_page(classes: list[str]) -> None:
     with tabs[0]:
         st.subheader("🍎 Image Classifier for Fruits")
         st.write("An interactive AI application that recognizes ten supported fruit categories using MobileNetV2 transfer learning, fine-tuning, multi-view prediction and a calibrated unknown-image detector.")
-        st.write("Images outside the learned fruit feature space are rejected instead of being presented as a confident supported fruit.")
+        st.write("Images outside the learned fruit feature space are rejected instead of being presented as a supported fruit.")
     with tabs[1]:
         st.write("**Model:** MobileNetV2 ImageNet backbone + fine-tuned classification head")
-        st.write("**Input:** 128 × 128 RGB image")
+        st.write("**Input:** 160 × 160 RGB image")
         st.write("**Classes:** " + ", ".join(classes))
-        st.write("**Inference:** Three-view probability averaging + feature-space OOD check")
+        st.write("**Inference:** Three-view probability averaging + class-specific feature-space OOD check")
     with tabs[2]:
-        tech = pd.DataFrame({"Technology": ["Python", "TensorFlow", "Keras", "Streamlit", "NumPy", "Pandas", "Pillow"], "Purpose": ["Application logic", "ML runtime", "Model training/inference", "Web interface", "Numerical processing", "Dashboard data", "Image processing"]})
-        st.dataframe(tech, use_container_width=True, hide_index=True)
+        st.write("TensorFlow, Keras, Streamlit, NumPy, Pandas and Pillow")
     with tabs[3]:
-        st.write("A prediction is accepted only when confidence, top-two margin, multi-view agreement and calibrated feature distance pass their checks.")
-        st.warning("Unknown-image rejection is calibrated from validation fruit images; it improves closed-set safety but cannot guarantee perfect rejection for every possible non-fruit image.")
+        st.write("The classifier is designed as a closed 10-class fruit recognizer. The OOD layer is a validation safeguard, not a mathematical guarantee for every possible real-world image.")
 
 
-def home_page(classes: list[str], bundled: Path | None) -> None:
-    st.markdown("""<style>.hero{padding:2.2rem 2.4rem;border-radius:24px;background:linear-gradient(135deg,#fff4e6,#fffaf4 48%,#eef9f1);border:1px solid rgba(0,0,0,.06);margin-bottom:1.4rem}.hero h1{font-size:3rem;margin:0 0 .55rem}.hero p{font-size:1.08rem;color:#4b5563;max-width:760px}.eyebrow{font-weight:700;letter-spacing:.08em;text-transform:uppercase;font-size:.78rem;color:#d97706}.card{padding:1.15rem;border:1px solid rgba(0,0,0,.08);border-radius:18px;background:rgba(255,255,255,.72);min-height:150px}.fruit-chip{display:inline-block;padding:.42rem .75rem;margin:.2rem .25rem .2rem 0;border-radius:999px;background:#f7f7f7;border:1px solid #e5e7eb;font-size:.88rem}</style>""", unsafe_allow_html=True)
-    st.markdown("<div class='hero'><div class='eyebrow'>AI-Powered Fruit Recognition</div><h1>🍎 Fruit Image Classifier</h1><p>Identify supported fruits while filtering unclear or out-of-class images using fine-tuned MobileNetV2 and feature-space validation.</p></div>", unsafe_allow_html=True)
-    a, b, c, d = st.columns(4)
-    a.metric("🍓 Fruit classes", len(classes)); b.metric("🖼️ Input size", "128 × 128"); c.metric("🧠 Model", "MobileNetV2"); d.metric("🛡️ OOD filter", "Enabled" if OOD_PATH.exists() else "Pending")
-    st.subheader("✨ What you can do")
-    f1, f2, f3 = st.columns(3)
-    cards = [(f1, "📸 Upload & Predict", "Upload images and receive validated ranked predictions."), (f2, "📷 Camera", "Capture a fruit directly from your device camera."), (f3, "📊 Dashboard", "Explore confidence, validation status and prediction history.")]
-    for col, title, text in cards:
-        with col:
-            st.markdown(f"<div class='card'><h3>{title}</h3><p>{text}</p></div>", unsafe_allow_html=True)
-    st.subheader("🍇 Supported fruits")
-    st.markdown("".join(f"<span class='fruit-chip'>{x}</span>" for x in classes), unsafe_allow_html=True)
-    if bundled:
-        st.success("✅ Trained model is ready for inference.")
+classes = load_classes()
+bundled_model = find_model()
+model_path = st.session_state.get("uploaded_model_path") or (str(bundled_model) if bundled_model else None)
+page = st.sidebar.radio("Navigate", ["Home", "Classifier", "Camera", "Dashboard", "Model Setup", "About"])
 
-
-def classifier_page(model: tf.keras.Model, classes: list[str]) -> None:
-    st.title("📸 Fruit Classifier")
-    uploaded = st.file_uploader("Upload a JPG, JPEG or PNG image", type=["jpg", "jpeg", "png"], key="fruit_upload")
-    if uploaded:
-        image = Image.open(uploaded)
-        st.image(image, caption="Uploaded image", use_container_width=True)
-        iq = quality(image)
-        try:
-            result = predict(model, image, classes)
-            show_result(result, iq)
-            record_prediction(result, iq, "Upload")
-        except Exception as exc:
-            st.error(f"Prediction failed: {exc}")
-
-
-def camera_page(model: tf.keras.Model, classes: list[str]) -> None:
-    st.title("📷 Camera Classifier")
-    captured = st.camera_input("Capture a fruit image")
-    if captured:
-        image = Image.open(captured)
-        st.image(image, caption="Captured image", use_container_width=True)
-        iq = quality(image)
-        try:
-            result = predict(model, image, classes)
-            show_result(result, iq)
-            record_prediction(result, iq, "Camera")
-        except Exception as exc:
-            st.error(f"Prediction failed: {exc}")
-
-
-def main() -> None:
-    classes = load_classes()
-    bundled = find_model()
-    st.sidebar.title("🍎 Fruit AI")
-    page = st.sidebar.radio("Navigate", ["🏠 Home", "📸 Classifier", "📷 Camera", "📊 Dashboard", "⚙️ Model Setup", "ℹ️ About"])
-    if page == "🏠 Home":
-        home_page(classes, bundled); return
-    if page == "📊 Dashboard":
-        dashboard_page(classes); return
-    if page == "⚙️ Model Setup":
-        model_setup_page(classes, bundled); return
-    if page == "ℹ️ About":
-        about_page(classes); return
-    if bundled is None:
-        st.error("No trained model found. Run the training workflow or upload a model in Model Setup.")
-        return
-    model = load_model(str(bundled))
-    if page == "📸 Classifier":
-        classifier_page(model, classes)
+if page == "Home":
+    st.title("🍎 Fruit Image Classifier")
+    st.write("Upload or capture an image to classify it into one of the 10 supported fruit classes.")
+    st.info("Supported: " + ", ".join(classes))
+    st.success("Feature-space OOD filtering is enabled when calibration is available.")
+elif page == "Dashboard":
+    dashboard_page(classes)
+elif page == "Model Setup":
+    model_setup_page(classes, bundled_model)
+elif page == "About":
+    about_page(classes)
+else:
+    if model_path is None:
+        st.error("No trained model is available. Please add a trained `.keras` model under models/ or upload one from Model Setup.")
     else:
-        camera_page(model, classes)
-
-
-if __name__ == "__main__":
-    main()
+        model = load_model(model_path)
+        image = None
+        source = "Upload"
+        if page == "Classifier":
+            uploaded = st.file_uploader("Upload a fruit image", type=["jpg", "jpeg", "png"])
+            if uploaded:
+                image = Image.open(uploaded)
+        elif page == "Camera":
+            camera = st.camera_input("Take a fruit photo")
+            source = "Camera"
+            if camera:
+                image = Image.open(camera)
+        if image is not None:
+            st.image(image, caption="Input image", width=320)
+            iq = quality(image)
+            try:
+                result = predict(model, image, classes)
+                show_result(result, iq)
+                record_prediction(result, iq, source)
+            except Exception as exc:
+                st.error(f"Prediction failed: {exc}")
