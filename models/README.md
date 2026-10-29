@@ -6,7 +6,7 @@ The training pipeline creates the trained MobileNetV2 classifier as:
 
 The upgraded project uses ten fruit classes in this order:
 
-`Apple`, `Banana`, `Grape`, `Kiwi`, `Lemon`, `Mango`, `Orange`, `Pineapple`, `Strawberry`, `Watermelon`.
+`Apple`, `Banana`, `Blackberry`, `Grape`, `Kiwi`, `Mango`, `Orange`, `Pineapple`, `Strawberry`, `Watermelon`.
 
 ## Automatic setup
 
