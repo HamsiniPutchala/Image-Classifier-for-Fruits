@@ -1,4 +1,4 @@
-"""Evaluate the trained fruit classifier on the held-out validation split."""
+"""Evaluate the trained fruit classifier on the validation split."""
 
 import json
 import logging
@@ -51,7 +51,7 @@ def load_trained_model(model_path):
 
 
 def get_predictions(model, validation_dataset):
-    """Evaluate exactly one complete pass without relying on Tensor .numpy()."""
+    """Evaluate exactly one complete validation pass."""
     validation_dataset.reset()
 
     probabilities = np.asarray(model.predict(validation_dataset, verbose=0))
@@ -68,8 +68,13 @@ def get_predictions(model, validation_dataset):
             f'{len(probabilities)} predictions.'
         )
 
-    predicted_labels = np.argmax(probabilities, axis=1).astype(np.int64)
+    if probabilities.shape[1] != len(validation_dataset.class_indices):
+        raise RuntimeError(
+            f'Model output count ({probabilities.shape[1]}) does not match '
+            f'dataset class count ({len(validation_dataset.class_indices)}).'
+        )
 
+    predicted_labels = np.argmax(probabilities, axis=1).astype(np.int64)
     return true_labels, predicted_labels, probabilities
 
 
@@ -77,8 +82,8 @@ def main():
     os.makedirs(RESULTS_PATH, exist_ok=True)
 
     class_names = load_class_names()
-    if len(class_names) != 3:
-        raise RuntimeError(f'Expected 3 fruit classes, found {len(class_names)}: {class_names}')
+    if len(class_names) < 2:
+        raise RuntimeError(f'Expected at least 2 fruit classes, found {len(class_names)}: {class_names}')
 
     validation_dataset = load_dataset(
         DATASET_PATH,
@@ -86,6 +91,12 @@ def main():
         batch_size=BATCH_SIZE,
     )
     model = load_trained_model(os.path.join(MODELS_PATH, 'best_model.keras'))
+
+    if len(class_names) != len(validation_dataset.class_indices):
+        raise RuntimeError(
+            f'Class metadata count ({len(class_names)}) does not match '
+            f'validation dataset count ({len(validation_dataset.class_indices)}).'
+        )
 
     true_labels, predicted_labels, _ = get_predictions(model, validation_dataset)
 
@@ -100,9 +111,10 @@ def main():
     )
 
     logger.info(
-        'Validation accuracy: %.2f%% | F1: %.4f',
+        'Validation accuracy: %.2f%% | F1: %.4f | Classes: %d',
         metrics['accuracy'] * 100,
         metrics['f1_score'],
+        len(class_names),
     )
 
 
