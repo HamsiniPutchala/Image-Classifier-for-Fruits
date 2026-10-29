@@ -130,3 +130,4 @@ jobs:
         run: |
           echo "Training, model verification, evaluation, and artifact upload completed successfully."
           echo "The trained 10-class model is available in the GitHub Actions artifact: fruit-classifier-model"
+          echo "Workflow publish step removed to prevent the previous repository-publish failure."
