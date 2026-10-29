@@ -41,15 +41,9 @@ jobs:
           python --version
           python -c "import tensorflow, numpy, pandas, matplotlib, seaborn, sklearn, PIL, kagglehub; print('All training dependencies imported successfully')"
 
-      - name: Replace Lime references with Blackberry
+      - name: Prepare and verify 10-class dataset
         run: |
-          sed -i 's/Lime/Blackberry/g' scripts/prepare_dataset.py app.py README.md models/README.md
-
-      - name: Download and prepare Fruits-360 dataset
-        run: python scripts/prepare_dataset.py
-
-      - name: Verify prepared 10-class dataset
-        run: |
+          python scripts/prepare_dataset.py
           python - <<'PY'
           from pathlib import Path
           classes = [
@@ -59,11 +53,12 @@ jobs:
           for split in ['train', 'validation']:
               for cls in classes:
                   path = Path('dataset') / split / cls
-                  count = len(list(path.glob('*'))) if path.exists() else 0
-                  print(f'{split}/{cls}: {count} files')
-                  if count == 0:
-                      raise SystemExit(f'Missing dataset files in {path}')
-          print(f'Verified {len(classes)} fruit classes')
+                  files = [p for p in path.iterdir() if p.is_file()] if path.exists() else []
+                  print(f'{split}/{cls}: {len(files)} files')
+                  expected = 450 if split == 'train' else 100
+                  if len(files) != expected:
+                      raise SystemExit(f'Expected {expected} files in {path}, found {len(files)}')
+          print(f'Verified balanced dataset: {len(classes)} classes, 450 train + 100 validation images per class')
           PY
 
       - name: Train MobileNetV2 model
@@ -104,19 +99,17 @@ jobs:
             results/*
           if-no-files-found: error
 
-      - name: Publish model, metadata and Blackberry documentation
+      - name: Publish trained model and metadata
         run: |
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          git add scripts/prepare_dataset.py app.py README.md models/README.md models/best_model.keras models/class_names.json
+          git add scripts/prepare_dataset.py models/best_model.keras models/fruit_classifier.keras models/class_names.json results
           if git diff --cached --quiet; then
-            echo "No changes to publish."
+            echo "No generated changes to publish."
             exit 0
           fi
-          git commit -m "Replace Lime with Blackberry in 10-class classifier"
-
+          git commit -m "Train 10-class fruit classifier"
           git fetch origin main
           git rebase origin/main
           git push origin HEAD:main
