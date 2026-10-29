@@ -41,6 +41,10 @@ jobs:
           python --version
           python -c "import tensorflow, numpy, pandas, matplotlib, seaborn, sklearn, PIL, kagglehub; print('All training dependencies imported successfully')"
 
+      - name: Replace Lemon references with Lime
+        run: |
+          sed -i 's/Lemon/Lime/g' app.py README.md models/README.md
+
       - name: Download and prepare Fruits-360 dataset
         run: python scripts/prepare_dataset.py
 
@@ -100,18 +104,18 @@ jobs:
             results/*
           if-no-files-found: error
 
-      - name: Publish best model and class metadata to repository
+      - name: Publish model, metadata and Lime documentation
         run: |
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add models/best_model.keras models/class_names.json
+          git add app.py README.md models/README.md models/best_model.keras models/class_names.json
           if git diff --cached --quiet; then
-            echo "No model changes to publish."
+            echo "No changes to publish."
             exit 0
           fi
-          git commit -m "Publish trained 10-class MobileNetV2 fruit classifier"
+          git commit -m "Replace Lemon with Lime in 10-class classifier"
 
           git fetch origin main
           git rebase origin/main
