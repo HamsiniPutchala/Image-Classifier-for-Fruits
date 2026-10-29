@@ -1,7 +1,7 @@
 """Prepare a balanced 10-class fruit dataset from Fruits-360.
 
 The project combines matching varieties into these ten fruit classes:
-Apple, Banana, Grape, Kiwi, Lime, Mango, Orange, Pineapple, Strawberry,
+Apple, Banana, Blackberry, Grape, Kiwi, Mango, Orange, Pineapple, Strawberry,
 and Watermelon.
 """
 from __future__ import annotations
@@ -17,7 +17,7 @@ DATASET_ROOT = ROOT / "dataset"
 TRAIN_ROOT = DATASET_ROOT / "train"
 VAL_ROOT = DATASET_ROOT / "validation"
 CLASSES = [
-    "Apple", "Banana", "Grape", "Kiwi", "Lime",
+    "Apple", "Banana", "Blackberry", "Grape", "Kiwi",
     "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon",
 ]
 TRAIN_PER_CLASS = 500
