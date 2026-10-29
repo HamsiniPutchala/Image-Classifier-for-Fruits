@@ -18,8 +18,11 @@ MODEL_CANDIDATES = [BASE_DIR / "models" / "best_model.keras", BASE_DIR / "models
 CLASS_NAMES_PATH = BASE_DIR / "models" / "class_names.json"
 DEFAULT_CLASSES = ["Apple", "Banana", "Blackberry", "Grape", "Kiwi", "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon"]
 IMAGE_SIZE = (128, 128)
-UNKNOWN_THRESHOLD = 0.92
-MIN_MARGIN = 0.22
+# These thresholds are intentionally practical for this 10-class closed-set model.
+# The classifier still exposes the raw confidence so users can judge borderline cases.
+ACCEPTANCE_THRESHOLD = 0.65
+MIN_MARGIN = 0.10
+MIN_VIEW_AGREEMENT = 2 / 3
 
 st.set_page_config(page_title="Fruit Image Classifier", page_icon="🍎", layout="wide")
 
@@ -53,6 +56,8 @@ def save_uploaded_model(data: bytes) -> str:
 
 
 def preprocess(image: Image.Image) -> np.ndarray:
+    # Training data is scaled to [0, 1]; the saved model's Rescaling layer
+    # then converts it to the [-1, 1] range expected by MobileNetV2.
     image = image.convert("RGB").resize(IMAGE_SIZE, Image.Resampling.LANCZOS)
     return np.asarray(image, dtype=np.float32) / 255.0
 
@@ -73,15 +78,21 @@ def predict(model: tf.keras.Model, image: Image.Image, classes: list[str]) -> di
     arr = preprocess(image)
     h, w = arr.shape[:2]
     crop = arr[int(h * .08):int(h * .92), int(w * .08):int(w * .92)]
-    views = [arr, np.ascontiguousarray(arr[:, ::-1, :]), preprocess(Image.fromarray(np.clip(crop * 255, 0, 255).astype(np.uint8)))]
+    views = [
+        arr,
+        np.ascontiguousarray(arr[:, ::-1, :]),
+        preprocess(Image.fromarray(np.clip(crop * 255, 0, 255).astype(np.uint8))),
+    ]
     predictions = []
     for view in views:
         raw = np.asarray(model.predict(view[None, ...], verbose=0)[0], dtype=float)
         if len(raw) != len(classes):
             raise ValueError(f"Model has {len(raw)} outputs but metadata has {len(classes)} classes.")
-        if np.any(raw < 0) or not np.isclose(raw.sum(), 1.0, atol=.05):
-            raw = np.exp(raw - raw.max())
-        predictions.append(raw / raw.sum())
+        raw = np.clip(raw, 0, None)
+        total = raw.sum()
+        if total <= 0:
+            raise ValueError("Model returned an invalid probability vector.")
+        predictions.append(raw / total)
     probs = np.mean(predictions, axis=0)
     order = np.argsort(probs)[::-1]
     best = int(order[0])
@@ -93,33 +104,33 @@ def predict(model: tf.keras.Model, image: Image.Image, classes: list[str]) -> di
         "confidence": confidence,
         "margin": margin,
         "agreement": agreement,
-        "supported": confidence >= UNKNOWN_THRESHOLD and margin >= MIN_MARGIN and agreement >= 2 / 3,
-        "top": [(classes[int(i)], float(probs[int(i)])) for i in order[:3]],
+        "supported": confidence >= ACCEPTANCE_THRESHOLD and margin >= MIN_MARGIN and agreement >= MIN_VIEW_AGREEMENT,
+        "top": [(classes[int(i)], float(probs[int(i)])) for i in order[:5]],
     }
 
 
 def record_prediction(result: dict[str, Any], iq: dict[str, Any], source: str) -> None:
     history = st.session_state.setdefault("prediction_history", [])
-    history.append({"Fruit": result["class"], "Confidence": result["confidence"], "Margin": result["margin"], "Agreement": result["agreement"], "Status": "Accepted" if result["supported"] else "Rejected", "Quality": iq["quality"], "Source": source})
+    history.append({"Fruit": result["class"], "Confidence": result["confidence"], "Margin": result["margin"], "Agreement": result["agreement"], "Status": "Accepted" if result["supported"] else "Needs review", "Quality": iq["quality"], "Source": source})
 
 
 def show_result(result: dict[str, Any], iq: dict[str, Any]) -> None:
-    if not result["supported"]:
-        st.error("🚫 No supported fruit could be identified confidently.")
-        st.write(f"Top prediction: **{result['class']}** ({result['confidence'] * 100:.1f}%)")
-        st.write(f"Margin: {result['margin'] * 100:.1f}% | Multi-view agreement: {result['agreement'] * 100:.0f}%")
-        st.info("Try a clear, well-lit image with one fruit centered in the frame.")
-        return
-    st.success(f"🍓 Predicted fruit: **{result['class']}**")
+    if result["supported"]:
+        st.success(f"🍓 Predicted fruit: **{result['class']}**")
+    else:
+        st.warning(f"⚠️ Best prediction: **{result['class']}** — confidence is below the acceptance level.")
+        st.write("The model will still show its best-ranked fruit instead of incorrectly reporting that no fruit was detected.")
     c1, c2, c3 = st.columns(3)
     c1.metric("Confidence", f"{result['confidence'] * 100:.2f}%")
     c2.metric("View agreement", f"{result['agreement'] * 100:.0f}%")
     c3.metric("Image quality", iq["quality"])
+    st.subheader("🏆 Ranked predictions")
     for rank, (name, prob) in enumerate(result["top"], 1):
         st.write(f"**{rank}. {name}** — {prob * 100:.2f}%")
         st.progress(float(prob))
     if iq["warnings"]:
         st.warning(" • ".join(iq["warnings"]))
+    st.caption(f"Acceptance: ≥ {ACCEPTANCE_THRESHOLD * 100:.0f}% confidence, ≥ {MIN_MARGIN * 100:.0f}% margin, ≥ {MIN_VIEW_AGREEMENT * 100:.0f}% view agreement.")
 
 
 def dashboard_page(classes: list[str]) -> None:
@@ -130,16 +141,16 @@ def dashboard_page(classes: list[str]) -> None:
         a, b, c, d = st.columns(4)
         a.metric("Predictions", 0)
         b.metric("Accepted", 0)
-        c.metric("Rejected", 0)
+        c.metric("Needs review", 0)
         d.metric("Avg. confidence", "—")
         return
     df = pd.DataFrame(history)
     accepted = int((df["Status"] == "Accepted").sum())
-    rejected = int((df["Status"] == "Rejected").sum())
+    review = int((df["Status"] == "Needs review").sum())
     a, b, c, d = st.columns(4)
     a.metric("🔎 Predictions", len(df))
     b.metric("✅ Accepted", accepted)
-    c.metric("🚫 Rejected", rejected)
+    c.metric("⚠️ Needs review", review)
     d.metric("🎯 Avg. confidence", f"{df['Confidence'].mean() * 100:.1f}%")
     tab1, tab2, tab3 = st.tabs(["📈 Analytics", "🍓 Fruit Insights", "🧾 Prediction Log"])
     with tab1:
@@ -148,8 +159,8 @@ def dashboard_page(classes: list[str]) -> None:
             st.subheader("Confidence by prediction")
             st.line_chart(df[["Confidence"]], height=280)
         with y:
-            st.subheader("Accepted vs rejected")
-            st.bar_chart(pd.DataFrame({"Count": [accepted, rejected]}, index=["Accepted", "Rejected"]), height=280)
+            st.subheader("Accepted vs review")
+            st.bar_chart(pd.DataFrame({"Count": [accepted, review]}, index=["Accepted", "Needs review"]), height=280)
         st.subheader("Image quality")
         st.bar_chart(df.groupby("Quality").size().rename("Count"), height=220)
     with tab2:
@@ -196,9 +207,9 @@ def model_setup_page(classes: list[str], bundled: Path | None) -> None:
         st.write("**Architecture:** MobileNetV2 transfer learning")
         st.write("**Framework:** TensorFlow / Keras")
         st.write("**Prediction views:** Original + mirrored + center crop")
-        st.write("**Acceptance threshold:** 92% confidence")
-        st.write("**Minimum margin:** 22%")
-        st.write("**Required view agreement:** 2 of 3")
+        st.write(f"**Acceptance threshold:** {ACCEPTANCE_THRESHOLD * 100:.0f}% confidence")
+        st.write(f"**Minimum margin:** {MIN_MARGIN * 100:.0f}%")
+        st.write(f"**Required view agreement:** {MIN_VIEW_AGREEMENT * 100:.0f}%")
     with tab3:
         checks = {
             "Class metadata": CLASS_NAMES_PATH.exists(),
@@ -229,8 +240,8 @@ def about_page(classes: list[str]) -> None:
         tech = pd.DataFrame({"Technology": ["Python", "TensorFlow", "Keras", "Streamlit", "NumPy", "Pandas", "Pillow"], "Purpose": ["Application logic", "ML runtime", "Model loading", "Web interface", "Numerical processing", "Dashboard data", "Image processing"]})
         st.dataframe(tech, use_container_width=True, hide_index=True)
     with tabs[3]:
-        st.write("Predictions combine confidence, top-two margin and agreement across three image views before acceptance.")
-        st.warning("The unsupported-input check is a heuristic for a closed-set classifier; it is not a guaranteed out-of-distribution detector.")
+        st.write("Predictions combine confidence, top-two margin and agreement across three image views before marking a result as accepted.")
+        st.warning("The acceptance check does not guarantee correctness. A closed-set classifier can still misclassify visually similar fruits; use the ranked predictions to review borderline cases.")
 
 
 def home_page(classes: list[str], bundled: Path | None) -> None:
