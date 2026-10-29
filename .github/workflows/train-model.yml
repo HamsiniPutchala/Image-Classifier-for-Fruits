@@ -2,6 +2,12 @@ name: Train Fruit Classifier
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - 'scripts/prepare_dataset.py'
+      - 'train.py'
+      - 'evaluate.py'
+      - '.github/workflows/train-model.yml'
 
 permissions:
   contents: write
@@ -38,11 +44,14 @@ jobs:
       - name: Download and prepare Fruits-360 dataset
         run: python scripts/prepare_dataset.py
 
-      - name: Verify prepared dataset
+      - name: Verify prepared 10-class dataset
         run: |
           python - <<'PY'
           from pathlib import Path
-          classes = ['Apple', 'Banana', 'Orange']
+          classes = [
+              'Apple', 'Banana', 'Grape', 'Kiwi', 'Lemon',
+              'Mango', 'Orange', 'Pineapple', 'Strawberry', 'Watermelon'
+          ]
           for split in ['train', 'validation']:
               for cls in classes:
                   path = Path('dataset') / split / cls
@@ -50,6 +59,7 @@ jobs:
                   print(f'{split}/{cls}: {count} files')
                   if count == 0:
                       raise SystemExit(f'Missing dataset files in {path}')
+          print(f'Verified {len(classes)} fruit classes')
           PY
 
       - name: Train MobileNetV2 model
@@ -63,10 +73,15 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
+          expected = [
+              'Apple', 'Banana', 'Grape', 'Kiwi', 'Lemon',
+              'Mango', 'Orange', 'Pineapple', 'Strawberry', 'Watermelon'
+          ]
           with open('models/class_names.json', encoding='utf-8') as f:
               classes = json.load(f)
-          assert classes == ['Apple', 'Banana', 'Orange'], classes
+          assert classes == expected, classes
           model_size_mb = Path('models/best_model.keras').stat().st_size / (1024 * 1024)
+          print(f'Classes: {classes}')
           print(f'Best model size: {model_size_mb:.2f} MB')
           if model_size_mb >= 95:
               raise SystemExit('best_model.keras is too large for normal GitHub repository storage')
@@ -85,23 +100,19 @@ jobs:
             results/*
           if-no-files-found: error
 
-      - name: Publish best model to repository
+      - name: Publish best model and class metadata to repository
         run: |
           set -e
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Commit the generated model first.
           git add models/best_model.keras models/class_names.json
           if git diff --cached --quiet; then
             echo "No model changes to publish."
             exit 0
           fi
-          git commit -m "Publish trained MobileNetV2 fruit classifier"
+          git commit -m "Publish trained 10-class MobileNetV2 fruit classifier"
 
-          # Synchronize with any commits added to main after checkout.
           git fetch origin main
           git rebase origin/main
-
-          # Push the rebased commit explicitly to main.
           git push origin HEAD:main
