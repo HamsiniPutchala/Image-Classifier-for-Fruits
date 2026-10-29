@@ -20,7 +20,11 @@ CLASSES = [
     "Apple", "Banana", "Blackberry", "Grape", "Kiwi",
     "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon",
 ]
-TRAIN_PER_CLASS = 500
+# Fruits-360 versions can have small per-class count differences.
+# 450 is safely below the known Watermelon source count and keeps the
+# generated dataset balanced without failing because one class has fewer
+# than 500 source training images.
+TRAIN_PER_CLASS = 450
 VAL_PER_CLASS = 100
 SEED = 42
 IMAGE_EXTENSIONS = {".jpg", ".jpeg", ".png", ".bmp", ".webp"}
@@ -95,9 +99,15 @@ def main() -> None:
         print(f"{class_name}: discovered {len(train_images)} training and {len(test_images)} test images")
 
         if len(train_images) < TRAIN_PER_CLASS:
-            raise RuntimeError(f"{class_name}: only {len(train_images)} source training images found; need {TRAIN_PER_CLASS}.")
+            raise RuntimeError(
+                f"{class_name}: only {len(train_images)} source training images found; "
+                f"need {TRAIN_PER_CLASS}."
+            )
         if len(test_images) < VAL_PER_CLASS:
-            raise RuntimeError(f"{class_name}: only {len(test_images)} source test images found; need {VAL_PER_CLASS}.")
+            raise RuntimeError(
+                f"{class_name}: only {len(test_images)} source test images found; "
+                f"need {VAL_PER_CLASS}."
+            )
 
         rng.shuffle(train_images)
         rng.shuffle(test_images)
