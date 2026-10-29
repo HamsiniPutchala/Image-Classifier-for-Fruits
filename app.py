@@ -126,6 +126,94 @@ def model_setup_page(classes: list[str], bundled: Path | None) -> None:
         st.error(f"Could not load uploaded model: {exc}")
 
 
+def home_page(classes: list[str], bundled: Path | None) -> None:
+    """Modern landing page for the fruit classifier."""
+    st.markdown(
+        """
+        <style>
+        .hero {
+            padding: 2.2rem 2.4rem;
+            border-radius: 24px;
+            background: linear-gradient(135deg, #fff4e6 0%, #fffaf4 48%, #eef9f1 100%);
+            border: 1px solid rgba(0,0,0,.06);
+            margin-bottom: 1.4rem;
+        }
+        .hero h1 { font-size: 3rem; margin: 0 0 .55rem 0; line-height: 1.05; }
+        .hero p { font-size: 1.08rem; color: #4b5563; max-width: 760px; margin: 0; }
+        .eyebrow { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; font-size: .78rem; color: #d97706; margin-bottom: .65rem; }
+        .card {
+            padding: 1.15rem;
+            border: 1px solid rgba(0,0,0,.08);
+            border-radius: 18px;
+            background: rgba(255,255,255,.72);
+            min-height: 150px;
+        }
+        .card-title { font-weight: 700; font-size: 1.05rem; margin-bottom: .35rem; }
+        .card-text { color: #5b6470; font-size: .92rem; line-height: 1.5; }
+        .fruit-chip {
+            display: inline-block;
+            padding: .42rem .75rem;
+            margin: .2rem .25rem .2rem 0;
+            border-radius: 999px;
+            background: #f7f7f7;
+            border: 1px solid #e5e7eb;
+            font-size: .88rem;
+        }
+        .section-label { font-size: 1.35rem; font-weight: 750; margin: 1.4rem 0 .7rem 0; }
+        </style>
+        """,
+        unsafe_allow_html=True,
+    )
+
+    with st.container():
+        st.markdown(
+            """
+            <div class="hero">
+                <div class="eyebrow">AI-Powered Fruit Recognition</div>
+                <h1>🍎 Fruit Image Classifier</h1>
+                <p>Identify fruits from an uploaded image or camera capture using a MobileNetV2 transfer-learning model with confidence and multi-view validation.</p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+
+    m1, m2, m3, m4 = st.columns(4, gap="medium")
+    m1.metric("🍓 Fruit classes", len(classes))
+    m2.metric("🖼️ Input size", "128 × 128")
+    m3.metric("🧠 Model", "MobileNetV2")
+    m4.metric("🛡️ Views checked", "3")
+
+    st.markdown('<div class="section-label">✨ What you can do</div>', unsafe_allow_html=True)
+    f1, f2, f3 = st.columns(3, gap="large")
+    with f1:
+        st.markdown('<div class="card"><div class="card-title">📸 Upload & Predict</div><div class="card-text">Upload JPG, JPEG or PNG images and receive the predicted fruit with confidence and top predictions.</div></div>', unsafe_allow_html=True)
+    with f2:
+        st.markdown('<div class="card"><div class="card-title">📷 Use Your Camera</div><div class="card-text">Capture a fruit directly from your device camera and run the same multi-view prediction pipeline.</div></div>', unsafe_allow_html=True)
+    with f3:
+        st.markdown('<div class="card"><div class="card-title">🛡️ Confidence-Aware Results</div><div class="card-text">Predictions are checked using confidence, prediction margin and agreement across multiple image views.</div></div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-label">🍇 Supported fruits</div>', unsafe_allow_html=True)
+    chips = "".join(f'<span class="fruit-chip">{name}</span>' for name in classes)
+    st.markdown(chips, unsafe_allow_html=True)
+
+    st.markdown('<div class="section-label">🚀 How it works</div>', unsafe_allow_html=True)
+    s1, s2, s3, s4 = st.columns(4, gap="medium")
+    for col, number, title, text in [
+        (s1, "01", "Choose an image", "Upload an image or capture one with your camera."),
+        (s2, "02", "Preprocess", "The image is resized and normalized for the model."),
+        (s3, "03", "Analyze", "Three views are evaluated and their probabilities are combined."),
+        (s4, "04", "Get the result", "See the fruit, confidence and ranked predictions."),
+    ]:
+        with col:
+            st.markdown(f'<div class="card"><div class="eyebrow">{number}</div><div class="card-title">{title}</div><div class="card-text">{text}</div></div>', unsafe_allow_html=True)
+
+    st.markdown('<div class="section-label">📦 Model status</div>', unsafe_allow_html=True)
+    if bundled:
+        st.success("✅ Trained 10-class model is bundled and ready. Open **Classifier** or **Camera** from the sidebar to start.")
+    else:
+        st.info("ℹ️ No bundled model was found. Open **Model Setup** to upload the trained `.keras` model for this session.")
+
+
 def main() -> None:
     classes = load_classes()
     bundled = find_model()
@@ -135,12 +223,7 @@ def main() -> None:
     st.sidebar.caption("MobileNetV2 • TensorFlow/Keras • Streamlit")
 
     if page == "🏠 Home":
-        st.title("🍎 Image Classifier for Fruits")
-        st.write("An interactive fruit-recognition application powered by MobileNetV2 transfer learning.")
-        st.metric("Supported fruits", len(classes))
-        st.subheader("Supported classes")
-        st.write(" • ".join(classes))
-        st.success("Trained model bundled with the app.") if bundled else st.info("Deployable without a bundled model. Upload the trained `.keras` model from Model Setup before predicting.")
+        home_page(classes, bundled)
         return
 
     if page == "⚙️ Model Setup":
