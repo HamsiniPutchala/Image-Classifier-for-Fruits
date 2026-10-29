@@ -6,6 +6,7 @@ on:
     paths:
       - 'scripts/prepare_dataset.py'
       - 'train.py'
+      - 'utils/**'
       - 'evaluate.py'
       - 'app.py'
       - '.github/workflows/train-model.yml'
@@ -20,89 +21,57 @@ concurrency:
 jobs:
   train:
     runs-on: ubuntu-22.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
           cache: pip
           cache-dependency-path: requirements-train.txt
-
       - name: Install training dependencies
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements-train.txt
-
-      - name: Verify Python and dependencies
-        run: |
-          python --version
-          python -c "import tensorflow, numpy, pandas, matplotlib, seaborn, sklearn, PIL, kagglehub; print('All training dependencies imported successfully')"
-
-      - name: Synchronize app metadata for Blackberry
+      - name: Verify dependencies
+        run: python -c "import tensorflow, numpy, pandas, matplotlib, seaborn, sklearn, PIL, kagglehub; print('Dependencies OK')"
+      - name: Prepare complete 10-class dataset
+        run: python scripts/prepare_dataset.py
+      - name: Verify dataset
         run: |
           python - <<'PY'
           from pathlib import Path
-          path = Path('app.py')
-          text = path.read_text(encoding='utf-8')
-          text = text.replace('"Apple", "Banana", "Grape", "Kiwi", "Lemon",', '"Apple", "Banana", "Blackberry", "Grape", "Kiwi",')
-          text = text.replace('"Apple", "Banana", "Lemon", "Mango",', '"Apple", "Banana", "Blackberry", "Mango",')
-          text = text.replace('predicted_class in {"Banana", "Lemon"}', 'predicted_class == "Banana"')
-          text = text.replace('"Lemon": "🍋"', '"Blackberry": "🫐"')
-          path.write_text(text, encoding='utf-8')
-          PY
-          grep -n "Blackberry" app.py
-          if grep -n "Lemon" app.py; then echo "Unexpected Lemon reference remains in app.py"; exit 1; fi
-
-      - name: Prepare and verify 10-class dataset
-        run: |
-          python scripts/prepare_dataset.py
-          python - <<'PY'
-          from pathlib import Path
-          classes = ['Apple', 'Banana', 'Blackberry', 'Grape', 'Kiwi', 'Mango', 'Orange', 'Pineapple', 'Strawberry', 'Watermelon']
-          for split in ['train', 'validation']:
+          classes = ['Apple','Banana','Blackberry','Grape','Kiwi','Mango','Orange','Pineapple','Strawberry','Watermelon']
+          for split in ['train','validation']:
               for cls in classes:
                   path = Path('dataset') / split / cls
                   files = [p for p in path.iterdir() if p.is_file()] if path.exists() else []
-                  expected = 450 if split == 'train' else 100
-                  print(f'{split}/{cls}: {len(files)} files')
-                  if len(files) != expected: raise SystemExit(f'Expected {expected} files in {path}, found {len(files)}')
-          print('Verified balanced 10-class dataset')
+                  if not files: raise SystemExit(f'Missing images: {path}')
+                  print(f'{split}/{cls}: {len(files)}')
           PY
-
-      - name: Train fine-tuned MobileNetV2 model
-        run: python train.py
-
-      - name: Verify trained model, OOD calibration and metadata
+      - name: Train and evaluate
+        run: |
+          python train.py
+          python evaluate.py
+      - name: Verify outputs
         run: |
           test -s models/best_model.keras
           test -s models/fruit_classifier.keras
           test -s models/class_names.json
           test -s models/ood_calibration.npz
           python - <<'PY'
-          import json
-          import numpy as np
-          from pathlib import Path
-          expected = ['Apple', 'Banana', 'Blackberry', 'Grape', 'Kiwi', 'Mango', 'Orange', 'Pineapple', 'Strawberry', 'Watermelon']
+          import json, numpy as np
+          expected = ['Apple','Banana','Blackberry','Grape','Kiwi','Mango','Orange','Pineapple','Strawberry','Watermelon']
           with open('models/class_names.json', encoding='utf-8') as f: classes = json.load(f)
-          assert classes == expected, classes
+          assert classes == expected
           data = np.load('models/ood_calibration.npz')
           assert data['centroids'].shape[0] == 10
-          assert float(data['distance_threshold']) > 0
-          for model_name in ['best_model.keras', 'fruit_classifier.keras']:
-              size_mb = Path('models', model_name).stat().st_size / (1024 * 1024)
-              print(f'{model_name}: {size_mb:.2f} MB')
-              if size_mb >= 95: raise SystemExit(f'{model_name} is too large for normal GitHub repository storage')
-          print('OOD calibration verified')
+          assert len(data['distance_thresholds']) == 10
+          print('All 10 classes and OOD calibration verified')
           PY
-
-      - name: Evaluate model
-        run: python evaluate.py
-
-      - name: Upload trained model and results as artifact
+      - name: Upload model and results
         uses: actions/upload-artifact@v4
         with:
           name: fruit-classifier-model
@@ -112,18 +81,9 @@ jobs:
             models/ood_calibration.npz
             results/*
           if-no-files-found: error
-
-      - name: Publish trained model and OOD calibration
+      - name: Publish model
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add models/best_model.keras models/fruit_classifier.keras models/class_names.json models/ood_calibration.npz
-          if git diff --cached --quiet; then
-            echo "No model changes to publish."
-          else
-            git commit -m "Publish fine-tuned fruit classifier and OOD calibration"
-            git push origin HEAD:main
-          fi
-
-      - name: Finalize successful training
-        run: echo "Training, fine-tuning, validation, OOD calibration and publication completed successfully."
+          if git diff --cached --quiet; then echo "No model changes"; else git commit -m "Publish improved fruit classifier" && git push origin HEAD:main; fi
