@@ -14,9 +14,9 @@ The upgraded classifier recognizes:
 
 1. 🍎 Apple
 2. 🍌 Banana
-3. 🍇 Grape
-4. 🥝 Kiwi
-5. 🍋 Lemon
+3. 🫐 Blackberry
+4. 🍇 Grape
+5. 🥝 Kiwi
 6. 🥭 Mango
 7. 🍊 Orange
 8. 🍍 Pineapple
@@ -45,11 +45,11 @@ Dropout(0.30)
         ↓
 Dense(10, Softmax)
         ↓
-Apple / Banana / Grape / Kiwi / Lemon
+Apple / Banana / Blackberry / Grape / Kiwi
 Mango / Orange / Pineapple / Strawberry / Watermelon
 ```
 
-The output layer is created dynamically from the number of dataset classes, so expanding the dataset from 3 to 10 classes does not require changing the MobileNetV2 backbone. fileciteturn179file0
+The output layer is created dynamically from the number of dataset classes, so expanding the dataset from 3 to 10 classes does not require changing the MobileNetV2 backbone.
 
 ## 🖼️ Preprocessing
 
@@ -57,7 +57,7 @@ The output layer is created dynamically from the number of dataset classes, so e
 - Resize to **128 × 128** pixels
 - Pixel normalization to `[0, 1]`
 - Training augmentation using rotation, zoom, shifts, shear, and horizontal flipping
-- Validation data uses resizing and normalization without training augmentation. fileciteturn180file0
+- Validation data uses resizing and normalization without training augmentation.
 
 ## 🏋️ Training
 
@@ -79,7 +79,7 @@ The training configuration remains:
 | Batch size | 32 |
 | Maximum epochs | 10 |
 
-The training script determines the number of output classes from the dataset, saves the best model, and writes the class-to-index mapping to `models/class_names.json`. fileciteturn179file0
+The training script determines the number of output classes from the dataset, saves the best model, and writes the class-to-index mapping to `models/class_names.json`.
 
 ## 📊 Evaluation
 
@@ -89,7 +89,7 @@ Run:
 python evaluate.py
 ```
 
-The evaluation pipeline now works with a variable number of classes and checks that the model output count, validation dataset classes, and class metadata agree before generating accuracy, precision, recall, F1-score, classification report, and confusion matrix. fileciteturn191file0
+The evaluation pipeline now works with a variable number of classes and checks that the model output count, validation dataset classes, and class metadata agree before generating accuracy, precision, recall, F1-score, classification report, and confusion matrix.
 
 The current evaluation terminology remains **Validation Performance**, because the project evaluates the validation directory rather than a separately held-out test set.
 
@@ -119,7 +119,7 @@ These checks reduce forced predictions but are not a mathematically guaranteed O
 - About page
 - Ten-class fruit display
 
-The app now checks that the bundled model output count matches the class metadata before allowing classification, preventing an old three-class model from being used with ten-class labels. fileciteturn181file0
+The app now checks that the bundled model output count matches the class metadata before allowing classification, preventing an old three-class model from being used with ten-class labels.
 
 ## 📁 Project Structure
 
@@ -129,9 +129,9 @@ Image-Classifier-for-Fruits/
 │   ├── train/
 │   │   ├── Apple/
 │   │   ├── Banana/
+│   │   ├── Blackberry/
 │   │   ├── Grape/
 │   │   ├── Kiwi/
-│   │   ├── Lemon/
 │   │   ├── Mango/
 │   │   ├── Orange/
 │   │   ├── Pineapple/
@@ -158,7 +158,7 @@ Image-Classifier-for-Fruits/
 
 ## 📦 Dataset Preparation
 
-The preparation script downloads Fruits-360 through KaggleHub and creates balanced project folders for the ten selected classes. It uses source training images for training and source test images for validation, helping prevent train/validation leakage. fileciteturn184file0
+The preparation script downloads Fruits-360 through KaggleHub and creates balanced project folders for the ten selected classes. It uses source training images for training and source test images for validation, helping prevent train/validation leakage.
 
 Run:
 
@@ -171,7 +171,7 @@ streamlit run app.py
 
 ## 🤖 Automatic Training
 
-The GitHub Actions workflow now verifies all ten classes, trains MobileNetV2, validates the generated class metadata, evaluates the model, uploads the model as an artifact, and publishes the new model and `class_names.json` to the repository. fileciteturn185file0
+The GitHub Actions workflow now verifies all ten classes, trains MobileNetV2, validates the generated class metadata, evaluates the model, uploads the model as an artifact, and publishes the new model and `class_names.json` to the repository.
 
 ## ⚠️ Limitations
 
