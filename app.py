@@ -20,11 +20,14 @@ CLASS_NAMES_PATH = BASE_DIR / "models" / "class_names.json"
 DATASET_PATH = BASE_DIR / "dataset"
 UPLOADS_PATH = BASE_DIR / "uploads"
 HISTORY_PATH = UPLOADS_PATH / "prediction_history.csv"
-DEFAULT_CLASSES = ["Apple", "Banana", "Orange"]
+DEFAULT_CLASSES = [
+    "Apple", "Banana", "Grape", "Kiwi", "Lemon",
+    "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon",
+]
 IMAGE_SIZE = (128, 128)
 # A standard softmax model always chooses one of its known classes. These
-# gates make the application reject uncertain/out-of-distribution inputs
-# without adding Grape (or any other unsupported fruit) as a class.
+# gates reject uncertain or obviously incompatible inputs without requiring
+# an extra "Unknown" class.
 UNKNOWN_THRESHOLD = 0.92
 MIN_MARGIN = 0.22
 MIN_VIEW_AGREEMENT = 2 / 3
@@ -133,11 +136,11 @@ def _probabilities(model: tf.keras.Model, image_array: np.ndarray) -> np.ndarray
 
 
 def visual_compatibility(image: Image.Image, predicted_class: str) -> tuple[bool, str]:
-    """Lightweight visual plausibility gate for the three trained classes.
+    """Lightweight visual plausibility gate for the ten trained classes.
 
-    This is intentionally a rejection gate, not a fourth classifier. It
-    prevents a high-confidence softmax result from being accepted when the
-    visible colour profile is clearly inconsistent with the predicted fruit.
+    This is a rejection gate rather than a second classifier. It is kept
+    deliberately broad because fruit appearance changes with variety and
+    ripeness.
     """
     hsv = np.asarray(image.convert("HSV").resize((96, 96)), dtype=np.uint8)
     hue = hsv[:, :, 0].astype(np.int16)
@@ -160,15 +163,23 @@ def visual_compatibility(image: Image.Image, predicted_class: str) -> tuple[bool
         "purple": float(purple.sum()) / total,
     }
 
-    if ratios["purple"] > 0.10 and predicted_class in {"Apple", "Orange"}:
+    # Strongly incompatible dominant colour checks.
+    if ratios["purple"] > 0.12 and predicted_class in {
+        "Apple", "Banana", "Lemon", "Mango", "Orange", "Pineapple", "Strawberry", "Watermelon"
+    }:
         return False, "The image has a strong purple colour profile that is inconsistent with the predicted class."
 
-    if predicted_class == "Apple" and ratios["red"] + ratios["green"] < 0.045:
-        return False, "The visible colour profile does not strongly match an apple."
-    if predicted_class == "Banana" and ratios["yellow"] < 0.055:
-        return False, "The visible colour profile does not strongly match a banana."
-    if predicted_class == "Orange" and ratios["orange"] < 0.055:
-        return False, "The visible colour profile does not strongly match an orange."
+    if predicted_class in {"Banana", "Lemon"} and ratios["yellow"] < 0.015:
+        return False, "The visible colour profile is not strongly compatible with the predicted class."
+
+    if predicted_class == "Orange" and ratios["orange"] < 0.015:
+        return False, "The visible colour profile is not strongly compatible with an orange."
+
+    if predicted_class == "Grape" and ratios["purple"] + ratios["green"] < 0.015:
+        return False, "The visible colour profile is not strongly compatible with grapes."
+
+    if predicted_class == "Strawberry" and ratios["red"] < 0.015:
+        return False, "The visible colour profile is not strongly compatible with a strawberry."
 
     return True, ""
 
@@ -180,7 +191,6 @@ def predict_image(model: tf.keras.Model, image_array: np.ndarray, class_names: l
         np.ascontiguousarray(image_array[:, ::-1, :]),
     ]
 
-    # Center-crop view reduces dependence on backgrounds and framing.
     h, w = image_array.shape[:2]
     crop_h, crop_w = int(h * 0.84), int(w * 0.84)
     y0, x0 = (h - crop_h) // 2, (w - crop_w) // 2
@@ -263,11 +273,15 @@ def save_prediction_history(image_name: str, predicted_class: str, confidence: f
         ])
 
 
-def show_prediction(results: dict[str, Any], quality: dict[str, Any]) -> None:
+def show_prediction(results: dict[str, Any], quality: dict[str, Any], classes: list[str]) -> None:
     confidence = results["confidence"]
     if not results["is_supported"]:
         st.error("🚫 No supported fruit exists in this image.")
-        st.info("This classifier recognizes only Apple, Banana, and Orange. Unsupported fruits such as grapes are rejected instead of being forced into one of the trained classes.")
+        st.info(
+            "This classifier recognizes the ten trained fruit classes: "
+            + ", ".join(classes)
+            + ". Unsupported inputs are rejected instead of being forced into a class."
+        )
         if results.get("rejection_reasons"):
             with st.expander("Why was this image rejected?"):
                 for reason in results["rejection_reasons"]:
@@ -294,7 +308,7 @@ def show_prediction(results: dict[str, Any], quality: dict[str, Any]) -> None:
         "Probability (%)": [v * 100 for v in results["probabilities"].values()],
     })
     st.markdown("#### 📈 Probability comparison")
-    st.bar_chart(probability_df.set_index("Fruit"), height=280)
+    st.bar_chart(probability_df.set_index("Fruit"), height=320)
 
 
 def classify_bytes(model: tf.keras.Model, data: bytes, classes: list[str]) -> tuple[Image.Image, dict[str, Any], dict[str, Any]]:
@@ -327,10 +341,13 @@ def home_page(classes: list[str], model_path: Path | None) -> None:
             st.markdown(f"<div class='card'><div style='font-size:2rem'>{icon}</div><h4>{title}</h4><p class='small-muted'>{text}</p></div>", unsafe_allow_html=True)
 
     st.markdown("### 🍎 Supported classes")
-    icons = {"Apple": "🍎", "Banana": "🍌", "Orange": "🍊"}
-    cols = st.columns(len(classes))
-    for col, fruit in zip(cols, classes):
-        with col:
+    icons = {
+        "Apple": "🍎", "Banana": "🍌", "Grape": "🍇", "Kiwi": "🥝", "Lemon": "🍋",
+        "Mango": "🥭", "Orange": "🍊", "Pineapple": "🍍", "Strawberry": "🍓", "Watermelon": "🍉",
+    }
+    cols = st.columns(5)
+    for index, fruit in enumerate(classes):
+        with cols[index % 5]:
             st.markdown(f"<div class='fruit-card'><div class='fruit-icon'>{icons.get(fruit, '🍓')}</div><b>{fruit}</b><br><span class='small-muted'>Supported class</span></div>", unsafe_allow_html=True)
 
     st.divider()
@@ -358,7 +375,7 @@ def upload_page(model: tf.keras.Model, classes: list[str]) -> None:
         with right:
             try:
                 _, results, quality = classify_bytes(model, data, classes)
-                show_prediction(results, quality)
+                show_prediction(results, quality, classes)
                 if results["is_supported"]:
                     save_prediction_history(uploaded_file.name, results["predicted_class"], results["confidence_percentage"], "upload", quality["quality"])
                     all_rows.append({
@@ -386,7 +403,7 @@ def camera_page(model: tf.keras.Model, classes: list[str]) -> None:
     try:
         image, results, quality = classify_bytes(model, camera_image.getvalue(), classes)
         st.image(image, caption="Captured image", width=450)
-        show_prediction(results, quality)
+        show_prediction(results, quality, classes)
         if results["is_supported"]:
             save_prediction_history("camera_capture.jpg", results["predicted_class"], results["confidence_percentage"], "camera", quality["quality"])
     except Exception as exc:
@@ -463,7 +480,7 @@ def model_page(model_path: Path | None, classes: list[str]) -> None:
         ("2", "Preprocessing", "The image is resized to 128 × 128 and pixel values are scaled to 0–1."),
         ("3", "Multi-view inference", "Original, mirrored and center-cropped views are evaluated and averaged."),
         ("4", "Safety gates", "Confidence, prediction margin, view agreement and visual plausibility are checked."),
-        ("5", "Interactive result", "Unsupported inputs are rejected instead of being forced into Apple, Banana or Orange."),
+        ("5", "Interactive result", "Unsupported inputs are rejected instead of being forced into one of the ten trained fruit classes."),
     ]:
         st.markdown(f"**{number}. {title}** — {description}")
     with st.expander("View model layer summary"):
@@ -486,7 +503,7 @@ def about_page(classes: list[str], model_path: Path | None) -> None:
             st.markdown(f"<div class='fruit-card'><div class='fruit-icon'>{icon}</div><b>{name}</b></div>", unsafe_allow_html=True)
     st.markdown("### 🍓 Supported fruits")
     st.write(" • ".join(classes))
-    st.info("Only Apple, Banana and Orange are trained target classes. Unsupported fruits are rejected by the application's confidence, consistency and visual-plausibility gates; they are not added as new classes.")
+    st.info("The current model is trained for the ten listed fruit classes. Unsupported images are rejected by the application's confidence, consistency and visual-plausibility gates.")
     st.markdown("### 📐 Prediction pipeline")
     st.markdown("**Image → RGB conversion → 128×128 resize → MobileNetV2 model → multi-view agreement → safety gates → supported result or rejection**")
     st.markdown("### ✨ Interactive features")
@@ -528,6 +545,12 @@ def main() -> None:
         return
     try:
         model = load_model_from_path(str(model_path))
+        if model.output_shape[-1] != len(classes):
+            st.error(
+                f"Model/class metadata mismatch: the bundled model has {model.output_shape[-1]} outputs, "
+                f"but the class metadata lists {len(classes)} classes. Retrain the model for the current 10-class dataset."
+            )
+            st.stop()
     except Exception as exc:
         st.error(f"The trained model could not be loaded: {exc}")
         return
