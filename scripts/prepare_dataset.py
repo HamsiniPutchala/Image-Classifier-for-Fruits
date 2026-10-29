@@ -1,12 +1,16 @@
-"""Prepare a clean 3-class fruit dataset from the real Fruits-360 dataset.
+"""Prepare a balanced 10-class fruit dataset from Fruits-360.
 
-The Kaggle Fruits-360 release has changed its internal folder layout across
-versions. This script therefore discovers fruit folders recursively and matches
-class names flexibly, instead of relying on one exact directory structure.
+The Fruits-360 release has changed its internal folder layout across versions.
+This script discovers fruit folders recursively and matches class names
+flexibly, including common variety names such as Apple Red, Banana Red,
+Mango Green, and Pineapple Mini.
 
-It combines all matching Apple/Banana/Orange varieties into three project
-classes. Source Training images are used for project training and source Test
-images for validation, preventing train/validation leakage.
+The project combines matching varieties into these ten fruit classes:
+Apple, Banana, Grape, Kiwi, Lemon, Mango, Orange, Pineapple, Strawberry,
+and Watermelon.
+
+Source Training images are used for project training and source Test images
+for validation, preventing train/validation leakage.
 """
 from __future__ import annotations
 
@@ -20,7 +24,18 @@ ROOT = Path(__file__).resolve().parents[1]
 DATASET_ROOT = ROOT / "dataset"
 TRAIN_ROOT = DATASET_ROOT / "train"
 VAL_ROOT = DATASET_ROOT / "validation"
-CLASSES = ["Apple", "Banana", "Orange"]
+CLASSES = [
+    "Apple",
+    "Banana",
+    "Grape",
+    "Kiwi",
+    "Lemon",
+    "Mango",
+    "Orange",
+    "Pineapple",
+    "Strawberry",
+    "Watermelon",
+]
 TRAIN_PER_CLASS = 500
 VAL_PER_CLASS = 100
 SEED = 42
@@ -32,7 +47,7 @@ def normalize_name(name: str) -> str:
 
 
 def class_matches(folder_name: str, class_name: str) -> bool:
-    """Match Apple/Banana/Orange and common variety naming variants."""
+    """Match a fruit and common variety naming variants."""
     name = normalize_name(folder_name)
     target = normalize_name(class_name)
     return name == target or name.startswith(target)
@@ -45,32 +60,28 @@ def find_split_root(root: Path, split_names: set[str]) -> Path:
     ]
     if not candidates:
         raise FileNotFoundError(f"Could not find a split folder under {root}")
-    # Prefer a split containing the largest number of image files.
     candidates.sort(
-        key=lambda p: sum(1 for f in p.rglob("*") if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS),
+        key=lambda p: sum(
+            1 for f in p.rglob("*")
+            if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+        ),
         reverse=True,
     )
     return candidates[0]
 
 
 def find_class_folders(split_root: Path, class_name: str) -> list[Path]:
-    """Find source folders for a class, including folders named like Banana 1."""
+    """Find source folders for a class, including variety folders."""
     matches: list[Path] = []
-    target = normalize_name(class_name)
     for folder in split_root.rglob("*"):
-        if not folder.is_dir():
+        if not folder.is_dir() or not class_matches(folder.name, class_name):
             continue
-        name = normalize_name(folder.name)
-        if name == target or name.startswith(target):
-            images = [
-                f for f in folder.iterdir()
-                if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
-            ]
-            if images:
-                matches.append(folder)
-
-    # If the dataset has a parent class folder containing variety subfolders,
-    # keep the leaf folders with images. This avoids double-counting.
+        images = [
+            f for f in folder.iterdir()
+            if f.is_file() and f.suffix.lower() in IMAGE_EXTENSIONS
+        ]
+        if images:
+            matches.append(folder)
     return sorted(set(matches), key=lambda p: str(p).lower())
 
 
@@ -92,7 +103,7 @@ def copy_images(images: list[Path], destination: Path) -> None:
 
 
 def main() -> None:
-    print("Downloading the real Fruits-360 dataset through KaggleHub...")
+    print("Downloading Fruits-360 through KaggleHub...")
     downloaded = Path(kagglehub.dataset_download("moltean/fruits"))
     print(f"Dataset cache: {downloaded}")
 
@@ -111,8 +122,10 @@ def main() -> None:
         train_images = image_files(train_folders)
         test_images = image_files(test_folders)
 
-        print(f"{class_name}: discovered {len(train_images)} training and {len(test_images)} test images")
-        print("  Training folders: " + ", ".join(p.name for p in train_folders[:20]))
+        print(
+            f"{class_name}: discovered {len(train_images)} training and "
+            f"{len(test_images)} test images"
+        )
 
         if len(train_images) < TRAIN_PER_CLASS:
             raise RuntimeError(
@@ -138,10 +151,13 @@ def main() -> None:
             f"validation={len(selected_val)}, varieties={len(train_folders)}"
         )
 
-    print("\nDataset preparation complete.")
+    print("\n10-class dataset preparation complete.")
     print(f"Created: {DATASET_ROOT}")
     print("Classes: " + ", ".join(CLASSES))
-    print(f"Images: {TRAIN_PER_CLASS * len(CLASSES)} training + {VAL_PER_CLASS * len(CLASSES)} validation")
+    print(
+        f"Images: {TRAIN_PER_CLASS * len(CLASSES)} training + "
+        f"{VAL_PER_CLASS * len(CLASSES)} validation"
+    )
     print("Next step: python train.py")
 
 
