@@ -28,11 +28,11 @@ def build_mobilenet_model(num_classes: int) -> keras.Model:
     inputs = keras.Input(shape=(IMAGE_SIZE[0], IMAGE_SIZE[1], 3), name='image')
     x = layers.Rescaling(2.0, offset=-1.0, name='mobilenet_input_scaling')(inputs)
     try:
+        # Keras 2.15 MobileNetV2 does not accept a `name` argument.
         base_model = keras.applications.MobileNetV2(
             input_shape=(IMAGE_SIZE[0], IMAGE_SIZE[1], 3),
             include_top=False,
             weights='imagenet',
-            name='mobilenetv2_backbone',
         )
     except Exception as exc:
         logger.warning('Could not download ImageNet weights (%s). Falling back to random weights.', exc)
@@ -40,8 +40,8 @@ def build_mobilenet_model(num_classes: int) -> keras.Model:
             input_shape=(IMAGE_SIZE[0], IMAGE_SIZE[1], 3),
             include_top=False,
             weights=None,
-            name='mobilenetv2_backbone',
         )
+    base_model._name = 'mobilenetv2_backbone'
     base_model.trainable = False
     x = base_model(x, training=False)
     x = layers.GlobalAveragePooling2D(name='global_average_pooling')(x)
@@ -52,11 +52,7 @@ def build_mobilenet_model(num_classes: int) -> keras.Model:
 
 
 def compile_model(model: keras.Model, learning_rate: float) -> keras.Model:
-    model.compile(
-        optimizer=keras.optimizers.Adam(learning_rate=learning_rate),
-        loss='categorical_crossentropy',
-        metrics=['accuracy'],
-    )
+    model.compile(optimizer=keras.optimizers.Adam(learning_rate=learning_rate), loss='categorical_crossentropy', metrics=['accuracy'])
     return model
 
 
@@ -75,17 +71,10 @@ def train_model(train_dataset, validation_dataset, epochs: int = INITIAL_EPOCHS)
 
     compile_model(model, 1e-3)
     logger.info('Stage 1: training classification head with frozen MobileNetV2 backbone')
-    first = model.fit(
-        train_dataset,
-        validation_data=validation_dataset,
-        epochs=epochs,
-        callbacks=callbacks(model_save_path),
-        verbose=1,
-    )
+    first = model.fit(train_dataset, validation_data=validation_dataset, epochs=epochs, callbacks=callbacks(model_save_path), verbose=1)
 
     backbone = model.get_layer('mobilenetv2_backbone')
     backbone.trainable = True
-    # Fine-tune only the last part of the backbone. BatchNorm remains frozen for stable small-dataset training.
     for layer in backbone.layers[:-FINE_TUNE_LAYERS]:
         layer.trainable = False
     for layer in backbone.layers:
@@ -94,17 +83,9 @@ def train_model(train_dataset, validation_dataset, epochs: int = INITIAL_EPOCHS)
 
     compile_model(model, 1e-5)
     logger.info('Stage 2: fine-tuning last %d MobileNetV2 layers', FINE_TUNE_LAYERS)
-    second = model.fit(
-        train_dataset,
-        validation_data=validation_dataset,
-        epochs=FINE_TUNE_EPOCHS,
-        callbacks=callbacks(model_save_path),
-        verbose=1,
-    )
+    second = model.fit(model.optimizer is not None and train_dataset or train_dataset, validation_data=validation_dataset, epochs=FINE_TUNE_EPOCHS, callbacks=callbacks(model_save_path), verbose=1)
 
-    history = {}
-    for key in set(first.history) | set(second.history):
-        history[key] = first.history.get(key, []) + second.history.get(key, [])
+    history = {key: first.history.get(key, []) + second.history.get(key, []) for key in set(first.history) | set(second.history)}
     log_message('MobileNetV2 fine-tuning training completed successfully!')
     return model, history
 
@@ -113,25 +94,17 @@ def save_class_names(train_dataset) -> list[str]:
     class_names = [None] * len(train_dataset.class_indices)
     for name, index in train_dataset.class_indices.items():
         class_names[index] = name
-    path = os.path.join(MODELS_PATH, 'class_names.json')
-    with open(path, 'w', encoding='utf-8') as file:
+    with open(os.path.join(MODELS_PATH, 'class_names.json'), 'w', encoding='utf-8') as file:
         json.dump(class_names, file, indent=2)
     return class_names
 
 
 def save_ood_calibration(model: keras.Model, validation_dataset, class_names: list[str]) -> None:
-    """Save validation embedding centroids and a conservative distance threshold.
-
-    This provides a second signal for rejecting images that are far from the
-    learned fruit feature space. The threshold is calibrated only from the
-    project's own validation images, so it does not claim perfect OOD detection.
-    """
     embedding_model = keras.Model(model.input, model.get_layer('global_average_pooling').output)
     validation_dataset.reset()
     embeddings = np.asarray(embedding_model.predict(validation_dataset, verbose=0), dtype=np.float32)
     labels = np.asarray(validation_dataset.classes, dtype=np.int64)
-    centroids = []
-    distances = []
+    centroids, distances = [], []
     for index in range(len(class_names)):
         class_embeddings = embeddings[labels == index]
         if len(class_embeddings) == 0:
@@ -139,13 +112,8 @@ def save_ood_calibration(model: keras.Model, validation_dataset, class_names: li
         centroid = class_embeddings.mean(axis=0)
         centroids.append(centroid)
         distances.extend(np.linalg.norm(class_embeddings - centroid, axis=1).tolist())
-    centroids = np.asarray(centroids, dtype=np.float32)
     threshold = float(np.percentile(np.asarray(distances), 99.0) * 1.20)
-    np.savez_compressed(
-        os.path.join(MODELS_PATH, 'ood_calibration.npz'),
-        centroids=centroids,
-        distance_threshold=np.asarray(threshold, dtype=np.float32),
-    )
+    np.savez_compressed(os.path.join(MODELS_PATH, 'ood_calibration.npz'), centroids=np.asarray(centroids, dtype=np.float32), distance_threshold=np.asarray(threshold, dtype=np.float32))
     logger.info('Saved OOD calibration threshold: %.4f', threshold)
 
 
